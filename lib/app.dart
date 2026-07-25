@@ -14,7 +14,14 @@ class OfflineNavigationApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const OfflineNavigationPage();
+    return MaterialApp(
+      title: 'Rugged SystEMS',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
+      ),
+      home: const OfflineNavigationPage(),
+    );
   }
 }
 
