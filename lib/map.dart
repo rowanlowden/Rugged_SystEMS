@@ -1,11 +1,10 @@
+import 'dart:io';
+
 import 'package:arcgis_maps/arcgis_maps.dart';
 import 'package:flutter/material.dart';
-import 'main.dart';
+import 'package:flutter/services.dart';
 
-const offlineMapPackagePath = String.fromEnvironment(
-  'OFFLINE_MMPK_PATH',
-  defaultValue: '',
-);
+const offlineMapAssetDirectory = 'assets/offline/';
 
 class OfflineNavigationApp extends StatelessWidget {
   const OfflineNavigationApp({super.key});
@@ -31,15 +30,12 @@ class OfflineNavigationPage extends StatefulWidget {
   const OfflineNavigationPage({super.key});
 
   @override
-  State<OfflineNavigationPage> createState() =>
-      _OfflineNavigationPageState();
+  State<OfflineNavigationPage> createState() => _OfflineNavigationPageState();
 }
 
 class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   final ArcGISMapViewController _mapViewController =
-  ArcGISMapView.createController();
-
-  MobileMapPackage? _mobileMapPackage;
+      ArcGISMapView.createController();
 
   bool _mapViewReady = false;
   bool _mapLoaded = false;
@@ -55,29 +51,28 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   }
 
   Future<void> _loadOfflineMap() async {
-    if (offlineMapPackagePath.trim().isEmpty) {
+    final mmpkAssetPath = await _findOfflineMmpkAssetPath();
+
+    if (mmpkAssetPath == null) {
       _setStatus(
-        'No offline map package was configured.\n\n'
-            'Provide OFFLINE_MMPK_PATH with --dart-define.',
+        'No offline map package was found in assets/offline.\n\n'
+        'Add a .mmpk file to assets/offline and list it in pubspec.yaml.',
         busy: false,
       );
       return;
     }
 
     try {
-      final package = MobileMapPackage.withFileUri(
-        Uri.file(offlineMapPackagePath),
-      );
+      final localMmpkPath = await _materializeAssetToLocalFile(mmpkAssetPath);
+
+      final package = MobileMapPackage.withFileUri(Uri.file(localMmpkPath));
 
       await package.load();
 
       if (package.maps.isEmpty) {
-        throw StateError(
-          'The mobile map package does not contain any maps.',
-        );
+        throw StateError('The mobile map package does not contain any maps.');
       }
 
-      _mobileMapPackage = package;
       _mapViewController.arcGISMap = package.maps.first;
 
       if (!mounted) return;
@@ -85,7 +80,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       setState(() {
         _mapLoaded = true;
         _busy = false;
-        _status = 'Offline map loaded';
+        _status = 'Offline map loaded: ${_fileNameFromPath(mmpkAssetPath)}';
       });
     } on ArcGISException catch (error) {
       _setStatus(
@@ -93,11 +88,50 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
         busy: false,
       );
     } catch (error) {
-      _setStatus(
-        'Could not load the offline map:\n$error',
-        busy: false,
-      );
+      _setStatus('Could not load the offline map:\n$error', busy: false);
     }
+  }
+
+  Future<String?> _findOfflineMmpkAssetPath() async {
+    final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    final mmpkAssets =
+        manifest
+            .listAssets()
+            .where(
+              (assetPath) =>
+                  assetPath.startsWith(offlineMapAssetDirectory) &&
+                  assetPath.toLowerCase().endsWith('.mmpk'),
+            )
+            .toList()
+          ..sort();
+
+    if (mmpkAssets.isEmpty) {
+      return null;
+    }
+
+    return mmpkAssets.first;
+  }
+
+  Future<String> _materializeAssetToLocalFile(String assetPath) async {
+    final assetData = await rootBundle.load(assetPath);
+    final tempDir = await Directory.systemTemp.createTemp('rugged_mmpk_');
+    final outputPath = '${tempDir.path}/${_fileNameFromPath(assetPath)}';
+    final outputFile = File(outputPath);
+
+    await outputFile.writeAsBytes(assetData.buffer.asUint8List(), flush: true);
+
+    return outputFile.path;
+  }
+
+  String _fileNameFromPath(String path) {
+    final normalizedPath = path.replaceAll('\\\\', '/');
+    final lastSlashIndex = normalizedPath.lastIndexOf('/');
+
+    if (lastSlashIndex == -1 || lastSlashIndex == normalizedPath.length - 1) {
+      return normalizedPath;
+    }
+
+    return normalizedPath.substring(lastSlashIndex + 1);
   }
 
   void _toggleLocation() {
@@ -159,7 +193,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     // 6. Create a RouteTracker for turn-by-turn navigation.
     _showMessage(
       'Route setup placeholder: connect this action to the '
-          'transportation network stored in the offline map package.',
+      'transportation network stored in the offline map package.',
     );
   }
 
@@ -197,9 +231,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
             tooltip: _locationEnabled ? 'Stop location' : 'Start location',
             onPressed: _mapLoaded ? _toggleLocation : null,
             icon: Icon(
-              _locationEnabled
-                  ? Icons.location_disabled
-                  : Icons.my_location,
+              _locationEnabled ? Icons.location_disabled : Icons.my_location,
             ),
           ),
         ],
@@ -216,10 +248,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
           SafeArea(
             child: Align(
               alignment: Alignment.topCenter,
-              child: _StatusCard(
-                message: _status,
-                showProgress: _busy,
-              ),
+              child: _StatusCard(message: _status, showProgress: _busy),
             ),
           ),
         ],
@@ -248,10 +277,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
 }
 
 class _StatusCard extends StatelessWidget {
-  const _StatusCard({
-    required this.message,
-    required this.showProgress,
-  });
+  const _StatusCard({required this.message, required this.showProgress});
 
   final String message;
   final bool showProgress;
@@ -261,10 +287,7 @@ class _StatusCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.all(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 12,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
