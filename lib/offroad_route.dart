@@ -3,35 +3,26 @@ import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:arcgis_maps/arcgis_maps.dart';
+import 'package:flutter/foundation.dart' show FlutterError, debugPrint;
+import 'package:flutter/services.dart';
 
 /// Solves the build-time configured least-cost path from one local Esri ASCII
 /// cost grid. No display raster, map view, network service, or user input is
 /// used.
 ///
-/// Configure the preset inputs with `--dart-define`:
+/// The bundled default is `test_data/test.asc`. Configure an existing local
+/// grid-file path and coordinate-system WKID with `--dart-define`.
+/// Start and destination coordinates are selected randomly from connected,
+/// traversable cells in the grid.
 ///
 /// ```text
 /// OFFLINE_COST_GRID_PATH=/app/data/cost.asc
 /// OFFLINE_COST_GRID_WKID=32615
-/// OFFLINE_ROUTE_START_X=500000
-/// OFFLINE_ROUTE_START_Y=4100000
-/// OFFLINE_ROUTE_DESTINATION_X=501000
-/// OFFLINE_ROUTE_DESTINATION_Y=4101000
 /// ```
-Future<LeastCostPathResult> solvePresetLeastCostPath() {
-  const gridPath = String.fromEnvironment('OFFLINE_COST_GRID_PATH');
-  const wkid = int.fromEnvironment(
-    'OFFLINE_COST_GRID_WKID',
-    defaultValue: 4326,
-  );
-  const startXText = String.fromEnvironment('OFFLINE_ROUTE_START_X');
-  const startYText = String.fromEnvironment('OFFLINE_ROUTE_START_Y');
-  const destinationXText = String.fromEnvironment(
-    'OFFLINE_ROUTE_DESTINATION_X',
-  );
-  const destinationYText = String.fromEnvironment(
-    'OFFLINE_ROUTE_DESTINATION_Y',
-  );
+Future<LeastCostPathResult> solvePresetLeastCostPath() async {
+  const gridPath = String.fromEnvironment('OFFLINE_COST_GRID_PATH',
+    defaultValue: 'test_data/test.asc');
+  const wkid = 4326;
 
   if (gridPath.trim().isEmpty) {
     throw const FormatException(
@@ -39,29 +30,51 @@ Future<LeastCostPathResult> solvePresetLeastCostPath() {
     );
   }
 
-  final startX = double.tryParse(startXText);
-  final startY = double.tryParse(startYText);
-  final destinationX = double.tryParse(destinationXText);
-  final destinationY = double.tryParse(destinationYText);
-  if (startX == null ||
-      startY == null ||
-      destinationX == null ||
-      destinationY == null) {
+
+  final localGridPath = await _resolveCostGridPath(gridPath);
+
+  final result = await OfflineLeastCostPathSolver(
+    costGridPath: localGridPath,
+    spatialReferenceWkid: wkid,
+  ).solveRandomCoordinates();
+  debugPrint(
+    'Least-cost path solved successfully: ${result.cells.length} cells, '
+    'accumulated cost ${result.accumulatedCost}.',
+  );
+  return result;
+}
+
+Future<String> _resolveCostGridPath(String configuredPath) async {
+  final path = configuredPath.trim();
+  if (path.isEmpty) {
     throw const FormatException(
-      'All four OFFLINE_ROUTE start/destination coordinates must be defined '
-      'as numbers.',
+      'OFFLINE_COST_GRID_PATH must identify an app-readable Esri ASCII grid.',
     );
   }
 
-  return OfflineLeastCostPathSolver(
-    costGridPath: gridPath,
-    spatialReferenceWkid: wkid,
-  ).solveCoordinates(
-    startX: startX,
-    startY: startY,
-    destinationX: destinationX,
-    destinationY: destinationY,
-  );
+  final localFile = File(path);
+  if (await localFile.exists()) {
+    return localFile.absolute.path;
+  }
+
+  try {
+    final assetData = await rootBundle.load(path);
+    final tempDirectory = await Directory.systemTemp.createTemp('rugged_grid_');
+    final outputFile = File('${tempDirectory.path}/cost.asc');
+    await outputFile.writeAsBytes(
+      assetData.buffer.asUint8List(
+        assetData.offsetInBytes,
+        assetData.lengthInBytes,
+      ),
+      flush: true,
+    );
+    return outputFile.path;
+  } on FlutterError catch (_) {
+    throw FileSystemException(
+      'ASCII cost grid was not found as a local file or bundled asset',
+      path,
+    );
+  }
 }
 
 /// Performs headless least-cost-path analysis using only an Esri ASCII grid.
@@ -170,6 +183,31 @@ class OfflineLeastCostPathSolver {
     );
   }
 
+  /// Selects random connected traversable cells and solves between their
+  /// centers in [spatialReferenceWkid].
+  Future<LeastCostPathResult> solveRandomCoordinates() async {
+    final path = costGridPath.trim();
+    if (path.isEmpty) {
+      throw const FormatException('The ASCII cost-grid path cannot be empty.');
+    }
+    if (spatialReferenceWkid <= 0) {
+      throw const FormatException(
+        'The ASCII grid spatial-reference WKID must be positive.',
+      );
+    }
+
+    final coordinates = await Isolate.run(
+      () => _loadAsciiGridAndSelectRandomCoordinates(path),
+    );
+
+    return solveCoordinates(
+      startX: coordinates.startX,
+      startY: coordinates.startY,
+      destinationX: coordinates.destinationX,
+      destinationY: coordinates.destinationY,
+    );
+  }
+
   void _validatePointSpatialReference(ArcGISPoint point, String name) {
     final pointSpatialReference = point.spatialReference;
     if (pointSpatialReference == null) {
@@ -233,6 +271,84 @@ class PathNotFoundException implements Exception {
   @override
   String toString() => 'PathNotFoundException: $message';
 }
+
+_RandomRouteCoordinates _loadAsciiGridAndSelectRandomCoordinates(String path) {
+  final file = File(path);
+  if (!file.existsSync()) {
+    throw FileSystemException('ASCII cost grid not found', path);
+  }
+
+  final grid = _AsciiCostGrid.parse(file.readAsStringSync());
+  final traversableCells = <_GridCell>[
+    for (var index = 0; index < grid.costs.length; index++)
+      if (grid.costs[index].isFinite) grid.cellForIndex(index),
+  ];
+  final random = math.Random();
+  final start = traversableCells[random.nextInt(traversableCells.length)];
+  final reachableCells = _reachableCells(grid, start);
+  final destination = reachableCells[random.nextInt(reachableCells.length)];
+
+  return _RandomRouteCoordinates(
+    startX: _cellCenterX(grid, start),
+    startY: _cellCenterY(grid, start),
+    destinationX: _cellCenterX(grid, destination),
+    destinationY: _cellCenterY(grid, destination),
+  );
+}
+
+List<_GridCell> _reachableCells(_AsciiCostGrid grid, _GridCell start) {
+  const directions = <(int, int)>[
+    (-1, 0), (1, 0), (0, -1), (0, 1),
+    (-1, -1), (-1, 1), (1, -1), (1, 1),
+  ];
+  final cells = <_GridCell>[start];
+  final visited = <int>{grid.indexOf(start)};
+
+  for (var index = 0; index < cells.length; index++) {
+    final current = cells[index];
+    for (final (rowDelta, columnDelta) in directions) {
+      final row = current.row + rowDelta;
+      final column = current.column + columnDelta;
+      if (row < 0 || row >= grid.rows || column < 0 || column >= grid.columns) {
+        continue;
+      }
+
+      final next = _GridCell(row, column);
+      final nextIndex = grid.indexOf(next);
+      if (visited.contains(nextIndex) || !grid.isTraversable(next)) continue;
+      if (rowDelta != 0 && columnDelta != 0 &&
+          (!grid.isTraversable(_GridCell(current.row, column)) ||
+              !grid.isTraversable(_GridCell(row, current.column)))) {
+        continue;
+      }
+
+      visited.add(nextIndex);
+      cells.add(next);
+    }
+  }
+
+  return cells;
+}
+
+class _RandomRouteCoordinates {
+  const _RandomRouteCoordinates({
+    required this.startX,
+    required this.startY,
+    required this.destinationX,
+    required this.destinationY,
+  });
+
+  final double startX;
+  final double startY;
+  final double destinationX;
+  final double destinationY;
+}
+
+double _cellCenterX(_AsciiCostGrid grid, _GridCell cell) =>
+    grid.xMin + (cell.column + 0.5) * grid.cellSize;
+
+double _cellCenterY(_AsciiCostGrid grid, _GridCell cell) =>
+    grid.yMin + (grid.rows - cell.row - 0.5) * grid.cellSize;
 
 _SolvedGridPath _loadAsciiGridAndSolve({
   required String path,
