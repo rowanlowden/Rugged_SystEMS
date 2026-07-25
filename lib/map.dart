@@ -4,6 +4,9 @@ import 'package:arcgis_maps/arcgis_maps.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'widgets/map_header_bar.dart';
+import 'widgets/patient_route_sheet.dart';
+
 const offlineMapAssetDirectory = 'assets/offline/';
 
 class OfflineNavigationApp extends StatelessWidget {
@@ -11,18 +14,7 @@ class OfflineNavigationApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Offline Navigation',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blueGrey,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
-      home: const OfflineNavigationPage(),
-    );
+    return const OfflineNavigationPage();
   }
 }
 
@@ -36,18 +28,24 @@ class OfflineNavigationPage extends StatefulWidget {
 class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   final ArcGISMapViewController _mapViewController =
       ArcGISMapView.createController();
+  static const _incomingDispatchCoordinates = 'N 34.1341, W 116.3131';
 
   bool _mapViewReady = false;
   bool _mapLoaded = false;
   bool _locationEnabled = false;
   bool _busy = true;
+  bool _dispatchBannerShown = false;
 
   String _status = 'Loading offline map…';
+  String _coordinatesLabel = 'N 34.1328, W 116.3106';
 
   @override
   void initState() {
     super.initState();
     _loadOfflineMap();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showDispatchCallBanner();
+    });
   }
 
   Future<void> _loadOfflineMap() async {
@@ -214,6 +212,52 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _showDispatchCallBanner() async {
+    if (!mounted || _dispatchBannerShown) {
+      return;
+    }
+
+    _dispatchBannerShown = true;
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentMaterialBanner()
+      ..showMaterialBanner(
+        MaterialBanner(
+          content: const Text(
+            'Incoming call from dispatch... updating coordinates.',
+          ),
+          leading: const Icon(Icons.phone_in_talk),
+          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
+          actions: [
+            TextButton(
+              onPressed: messenger.hideCurrentMaterialBanner,
+              child: const Text('Dismiss'),
+            ),
+          ],
+        ),
+      );
+
+    await Future<void>.delayed(const Duration(seconds: 2));
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _coordinatesLabel = _incomingDispatchCoordinates;
+      _status = 'Dispatch updated coordinates';
+    });
+
+    await Future<void>.delayed(const Duration(seconds: 2));
+
+    if (!mounted) {
+      return;
+    }
+
+    messenger.hideCurrentMaterialBanner();
+  }
+
   @override
   void dispose() {
     _mapViewController.locationDisplay.stop();
@@ -225,7 +269,11 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Offline Navigation'),
+        title: const Text('Rugged SystEMS'),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(74),
+          child: MapHeaderBar(coordinatesLabel: _coordinatesLabel),
+        ),
         actions: [
           IconButton(
             tooltip: _locationEnabled ? 'Stop location' : 'Start location',
@@ -250,6 +298,16 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
               alignment: Alignment.topCenter,
               child: _StatusCard(message: _status, showProgress: _busy),
             ),
+          ),
+          DraggableScrollableSheet(
+            initialChildSize: 0.22,
+            minChildSize: 0.12,
+            maxChildSize: 0.52,
+            snap: true,
+            snapSizes: const [0.22, 0.52],
+            builder: (context, scrollController) {
+              return PatientRouteSheet(scrollController: scrollController);
+            },
           ),
         ],
       ),
