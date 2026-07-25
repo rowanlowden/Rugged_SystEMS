@@ -1,0 +1,638 @@
+import 'dart:io';
+import 'dart:isolate';
+import 'dart:math' as math;
+
+import 'package:arcgis_maps/arcgis_maps.dart';
+
+/// Solves the build-time configured least-cost path from one local Esri ASCII
+/// cost grid. No display raster, map view, network service, or user input is
+/// used.
+///
+/// Configure the preset inputs with `--dart-define`:
+///
+/// ```text
+/// OFFLINE_COST_GRID_PATH=/app/data/cost.asc
+/// OFFLINE_COST_GRID_WKID=32615
+/// OFFLINE_ROUTE_START_X=500000
+/// OFFLINE_ROUTE_START_Y=4100000
+/// OFFLINE_ROUTE_DESTINATION_X=501000
+/// OFFLINE_ROUTE_DESTINATION_Y=4101000
+/// ```
+Future<LeastCostPathResult> solvePresetLeastCostPath() {
+  const gridPath = String.fromEnvironment('OFFLINE_COST_GRID_PATH');
+  const wkid = int.fromEnvironment(
+    'OFFLINE_COST_GRID_WKID',
+    defaultValue: 4326,
+  );
+  const startXText = String.fromEnvironment('OFFLINE_ROUTE_START_X');
+  const startYText = String.fromEnvironment('OFFLINE_ROUTE_START_Y');
+  const destinationXText = String.fromEnvironment(
+    'OFFLINE_ROUTE_DESTINATION_X',
+  );
+  const destinationYText = String.fromEnvironment(
+    'OFFLINE_ROUTE_DESTINATION_Y',
+  );
+
+  if (gridPath.trim().isEmpty) {
+    throw const FormatException(
+      'OFFLINE_COST_GRID_PATH must identify an app-readable Esri ASCII grid.',
+    );
+  }
+
+  final startX = double.tryParse(startXText);
+  final startY = double.tryParse(startYText);
+  final destinationX = double.tryParse(destinationXText);
+  final destinationY = double.tryParse(destinationYText);
+  if (startX == null ||
+      startY == null ||
+      destinationX == null ||
+      destinationY == null) {
+    throw const FormatException(
+      'All four OFFLINE_ROUTE start/destination coordinates must be defined '
+      'as numbers.',
+    );
+  }
+
+  return OfflineLeastCostPathSolver(
+    costGridPath: gridPath,
+    spatialReferenceWkid: wkid,
+  ).solveCoordinates(
+    startX: startX,
+    startY: startY,
+    destinationX: destinationX,
+    destinationY: destinationY,
+  );
+}
+
+/// Performs headless least-cost-path analysis using only an Esri ASCII grid.
+///
+/// File parsing and A* run in a worker isolate. ArcGIS geometry is created on
+/// the calling isolate and returned to whichever file is responsible for
+/// display or persistence.
+class OfflineLeastCostPathSolver {
+  const OfflineLeastCostPathSolver({
+    required this.costGridPath,
+    required this.spatialReferenceWkid,
+  });
+
+  /// Path to an Esri ASCII cost grid in app-accessible local storage.
+  final String costGridPath;
+
+  /// Coordinate-system WKID for both the grid and input/output geometry.
+  final int spatialReferenceWkid;
+
+  /// Solves between two preset ArcGIS points.
+  Future<LeastCostPathResult> solve({
+    required ArcGISPoint start,
+    required ArcGISPoint destination,
+  }) {
+    _validatePointSpatialReference(start, 'start');
+    _validatePointSpatialReference(destination, 'destination');
+    return solveCoordinates(
+      startX: start.x,
+      startY: start.y,
+      destinationX: destination.x,
+      destinationY: destination.y,
+    );
+  }
+
+  /// Solves between two preset coordinates in [spatialReferenceWkid].
+  Future<LeastCostPathResult> solveCoordinates({
+    required double startX,
+    required double startY,
+    required double destinationX,
+    required double destinationY,
+  }) async {
+    final path = costGridPath.trim();
+    if (path.isEmpty) {
+      throw const FormatException('The ASCII cost-grid path cannot be empty.');
+    }
+    if (spatialReferenceWkid <= 0) {
+      throw const FormatException(
+        'The ASCII grid spatial-reference WKID must be positive.',
+      );
+    }
+    if (![
+      startX,
+      startY,
+      destinationX,
+      destinationY,
+    ].every((v) => v.isFinite)) {
+      throw const FormatException('Route coordinates must be finite numbers.');
+    }
+
+    final solved = await Isolate.run(
+      () => _loadAsciiGridAndSolve(
+        path: path,
+        startX: startX,
+        startY: startY,
+        destinationX: destinationX,
+        destinationY: destinationY,
+      ),
+    );
+
+    if (solved.cells.isEmpty) {
+      throw const PathNotFoundException(
+        'No traversable path connects the preset points.',
+      );
+    }
+
+    final spatialReference = SpatialReference(wkid: spatialReferenceWkid);
+    final cells = List<LeastCostPathCell>.unmodifiable(
+      solved.cells.map((cell) => LeastCostPathCell(cell.row, cell.column)),
+    );
+    final vertices = List<ArcGISPoint>.unmodifiable(
+      _removeCollinearCells(solved.cells).map(
+        (cell) => _cellCenter(
+          cell: cell,
+          rows: solved.rows,
+          xMin: solved.xMin,
+          yMin: solved.yMin,
+          cellSize: solved.cellSize,
+          spatialReference: spatialReference,
+        ),
+      ),
+    );
+
+    final builder = PolylineBuilder(spatialReference: spatialReference);
+    for (final vertex in vertices) {
+      builder.addPoint(vertex);
+    }
+    // A polyline requires a segment. Duplicate a sole cell center when both
+    // preset coordinates resolve to the same grid cell.
+    if (vertices.length == 1) builder.addPoint(vertices.single);
+
+    return LeastCostPathResult(
+      polyline: builder.toGeometry() as Polyline,
+      vertices: vertices,
+      cells: cells,
+      accumulatedCost: solved.cost,
+    );
+  }
+
+  void _validatePointSpatialReference(ArcGISPoint point, String name) {
+    final pointSpatialReference = point.spatialReference;
+    if (pointSpatialReference == null) {
+      throw FormatException('The $name point must have a spatial reference.');
+    }
+    if (pointSpatialReference.wkid != spatialReferenceWkid) {
+      throw FormatException(
+        'The $name point uses WKID ${pointSpatialReference.wkid}; '
+        'expected $spatialReferenceWkid.',
+      );
+    }
+  }
+}
+
+/// Output that another file can display, save, or further process.
+class LeastCostPathResult {
+  const LeastCostPathResult({
+    required this.polyline,
+    required this.vertices,
+    required this.cells,
+    required this.accumulatedCost,
+  });
+
+  /// ArcGIS geometry ready to assign to a [Graphic] or feature.
+  final Polyline polyline;
+
+  /// Simplified cell-center points used to build [polyline].
+  final List<ArcGISPoint> vertices;
+
+  /// Every ASCII-grid cell traversed from start to destination.
+  final List<LeastCostPathCell> cells;
+
+  /// Sum of cost-weighted movement distance along the path.
+  final double accumulatedCost;
+}
+
+/// Public row/column index of a traversed ASCII-grid cell.
+class LeastCostPathCell {
+  const LeastCostPathCell(this.row, this.column);
+
+  final int row;
+  final int column;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LeastCostPathCell && row == other.row && column == other.column;
+
+  @override
+  int get hashCode => Object.hash(row, column);
+
+  @override
+  String toString() => 'LeastCostPathCell(row: $row, column: $column)';
+}
+
+/// Thrown when valid preset points are separated by impassable cells.
+class PathNotFoundException implements Exception {
+  const PathNotFoundException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'PathNotFoundException: $message';
+}
+
+_SolvedGridPath _loadAsciiGridAndSolve({
+  required String path,
+  required double startX,
+  required double startY,
+  required double destinationX,
+  required double destinationY,
+}) {
+  final file = File(path);
+  if (!file.existsSync()) {
+    throw FileSystemException('ASCII cost grid not found', path);
+  }
+
+  final grid = _AsciiCostGrid.parse(file.readAsStringSync());
+  final start = grid.cellAt(startX, startY);
+  if (start == null) {
+    throw const FormatException(
+      'The preset start point is outside the ASCII grid.',
+    );
+  }
+  final destination = grid.cellAt(destinationX, destinationY);
+  if (destination == null) {
+    throw const FormatException(
+      'The preset destination point is outside the ASCII grid.',
+    );
+  }
+  if (!grid.isTraversable(start)) {
+    throw const FormatException(
+      'The preset start point falls on a NoData or negative-cost cell.',
+    );
+  }
+  if (!grid.isTraversable(destination)) {
+    throw const FormatException(
+      'The preset destination point falls on a NoData or negative-cost cell.',
+    );
+  }
+
+  final result = _findLeastCostPath(grid, start, destination);
+  return _SolvedGridPath(
+    cells: result.cells,
+    cost: result.cost,
+    rows: grid.rows,
+    xMin: grid.xMin,
+    yMin: grid.yMin,
+    cellSize: grid.cellSize,
+  );
+}
+
+class _SolvedGridPath {
+  const _SolvedGridPath({
+    required this.cells,
+    required this.cost,
+    required this.rows,
+    required this.xMin,
+    required this.yMin,
+    required this.cellSize,
+  });
+
+  final List<_GridCell> cells;
+  final double cost;
+  final int rows;
+  final double xMin;
+  final double yMin;
+  final double cellSize;
+}
+
+class _AsciiCostGrid {
+  const _AsciiCostGrid({
+    required this.columns,
+    required this.rows,
+    required this.xMin,
+    required this.yMin,
+    required this.cellSize,
+    required this.costs,
+    required this.minimumCost,
+  });
+
+  final int columns;
+  final int rows;
+  final double xMin;
+  final double yMin;
+  final double cellSize;
+  final List<double> costs;
+  final double minimumCost;
+
+  double get xMax => xMin + columns * cellSize;
+  double get yMax => yMin + rows * cellSize;
+
+  factory _AsciiCostGrid.parse(String text) {
+    final lines = text.split(RegExp(r'\r?\n'));
+    final header = <String, double>{};
+    final valueTokens = <String>[];
+    var readingValues = false;
+
+    for (final rawLine in lines) {
+      final line = rawLine.trim();
+      if (line.isEmpty) continue;
+      final parts = line.split(RegExp(r'\s+'));
+      final key = parts.first.toLowerCase();
+      const headerKeys = {
+        'ncols',
+        'nrows',
+        'xllcorner',
+        'xllcenter',
+        'yllcorner',
+        'yllcenter',
+        'cellsize',
+        'nodata_value',
+      };
+      if (!readingValues && headerKeys.contains(key)) {
+        if (parts.length != 2 || double.tryParse(parts[1]) == null) {
+          throw FormatException('Malformed ASCII header line: $line');
+        }
+        header[key] = double.parse(parts[1]);
+      } else {
+        readingValues = true;
+        valueTokens.addAll(parts);
+      }
+    }
+
+    final columnsValue = header['ncols'];
+    final rowsValue = header['nrows'];
+    final cellSize = header['cellsize'];
+    final hasXCorner = header.containsKey('xllcorner');
+    final hasXCenter = header.containsKey('xllcenter');
+    final hasYCorner = header.containsKey('yllcorner');
+    final hasYCenter = header.containsKey('yllcenter');
+    if (columnsValue == null ||
+        rowsValue == null ||
+        cellSize == null ||
+        hasXCorner == hasXCenter ||
+        hasYCorner == hasYCenter) {
+      throw const FormatException(
+        'ASCII header requires ncols, nrows, cellsize, and exactly one '
+        'x/y lower-left origin.',
+      );
+    }
+
+    final columns = columnsValue.toInt();
+    final rows = rowsValue.toInt();
+    if (columnsValue != columns ||
+        rowsValue != rows ||
+        columns <= 0 ||
+        rows <= 0 ||
+        !cellSize.isFinite ||
+        cellSize <= 0) {
+      throw const FormatException(
+        'ASCII grid dimensions and cellsize must be positive.',
+      );
+    }
+
+    final cellCount = columns * rows;
+    if (valueTokens.length != cellCount) {
+      throw FormatException(
+        'Expected $cellCount ASCII cell values but found '
+        '${valueTokens.length}.',
+      );
+    }
+
+    final noData = header['nodata_value'];
+    final costs = List<double>.filled(cellCount, double.nan);
+    var minimumCost = double.infinity;
+    for (var index = 0; index < cellCount; index++) {
+      final value = double.tryParse(valueTokens[index]);
+      if (value == null) {
+        throw FormatException('ASCII cell ${index + 1} is not numeric.');
+      }
+      final isNoData = noData != null && value == noData;
+      if (!isNoData && value.isFinite && value >= 0) {
+        costs[index] = value;
+        minimumCost = math.min(minimumCost, value);
+      }
+    }
+    if (!minimumCost.isFinite) {
+      throw const FormatException(
+        'The ASCII grid contains no traversable cells.',
+      );
+    }
+
+    final rawX = header[hasXCorner ? 'xllcorner' : 'xllcenter']!;
+    final rawY = header[hasYCorner ? 'yllcorner' : 'yllcenter']!;
+    return _AsciiCostGrid(
+      columns: columns,
+      rows: rows,
+      xMin: rawX - (hasXCenter ? cellSize / 2 : 0),
+      yMin: rawY - (hasYCenter ? cellSize / 2 : 0),
+      cellSize: cellSize,
+      costs: costs,
+      minimumCost: minimumCost,
+    );
+  }
+
+  _GridCell? cellAt(double x, double y) {
+    if (x < xMin || x >= xMax || y < yMin || y >= yMax) return null;
+    final column = ((x - xMin) / cellSize).floor();
+    final rowFromBottom = ((y - yMin) / cellSize).floor();
+    return _GridCell(rows - rowFromBottom - 1, column);
+  }
+
+  bool isTraversable(_GridCell cell) => costs[indexOf(cell)].isFinite;
+
+  int indexOf(_GridCell cell) => cell.row * columns + cell.column;
+
+  _GridCell cellForIndex(int index) =>
+      _GridCell(index ~/ columns, index % columns);
+}
+
+class _GridCell {
+  const _GridCell(this.row, this.column);
+
+  final int row;
+  final int column;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _GridCell && row == other.row && column == other.column;
+
+  @override
+  int get hashCode => Object.hash(row, column);
+}
+
+class _PathResult {
+  const _PathResult(this.cells, this.cost);
+
+  final List<_GridCell> cells;
+  final double cost;
+}
+
+_PathResult _findLeastCostPath(
+  _AsciiCostGrid grid,
+  _GridCell start,
+  _GridCell destination,
+) {
+  if (start == destination) return _PathResult([start], 0);
+
+  final count = grid.rows * grid.columns;
+  final startIndex = grid.indexOf(start);
+  final destinationIndex = grid.indexOf(destination);
+  final distance = List<double>.filled(count, double.infinity);
+  final previous = List<int>.filled(count, -1);
+  final closed = List<bool>.filled(count, false);
+  final queue = _MinHeap();
+  distance[startIndex] = 0;
+  queue.add(_QueueEntry(startIndex, _heuristic(grid, start, destination)));
+
+  const directions = <(int, int)>[
+    (-1, 0),
+    (1, 0),
+    (0, -1),
+    (0, 1),
+    (-1, -1),
+    (-1, 1),
+    (1, -1),
+    (1, 1),
+  ];
+
+  while (queue.isNotEmpty) {
+    final currentIndex = queue.removeFirst().index;
+    if (closed[currentIndex]) continue;
+    if (currentIndex == destinationIndex) break;
+    closed[currentIndex] = true;
+    final current = grid.cellForIndex(currentIndex);
+
+    for (final (rowDelta, columnDelta) in directions) {
+      final row = current.row + rowDelta;
+      final column = current.column + columnDelta;
+      if (row < 0 || row >= grid.rows || column < 0 || column >= grid.columns) {
+        continue;
+      }
+
+      final next = _GridCell(row, column);
+      final nextIndex = grid.indexOf(next);
+      if (closed[nextIndex] || !grid.costs[nextIndex].isFinite) continue;
+
+      final diagonal = rowDelta != 0 && columnDelta != 0;
+      if (diagonal) {
+        final horizontal = _GridCell(current.row, column);
+        final vertical = _GridCell(row, current.column);
+        if (!grid.isTraversable(horizontal) || !grid.isTraversable(vertical)) {
+          continue;
+        }
+      }
+
+      final stepLength = diagonal ? math.sqrt2 : 1.0;
+      final transitionCost =
+          (grid.costs[currentIndex] + grid.costs[nextIndex]) /
+          2 *
+          grid.cellSize *
+          stepLength;
+      final candidate = distance[currentIndex] + transitionCost;
+      if (candidate >= distance[nextIndex]) continue;
+
+      distance[nextIndex] = candidate;
+      previous[nextIndex] = currentIndex;
+      queue.add(
+        _QueueEntry(nextIndex, candidate + _heuristic(grid, next, destination)),
+      );
+    }
+  }
+
+  if (!distance[destinationIndex].isFinite) {
+    return const _PathResult([], double.infinity);
+  }
+
+  final reversed = <_GridCell>[];
+  var index = destinationIndex;
+  while (index != -1) {
+    reversed.add(grid.cellForIndex(index));
+    if (index == startIndex) break;
+    index = previous[index];
+  }
+  return _PathResult(reversed.reversed.toList(), distance[destinationIndex]);
+}
+
+double _heuristic(_AsciiCostGrid grid, _GridCell from, _GridCell to) {
+  final deltaRow = (from.row - to.row).abs();
+  final deltaColumn = (from.column - to.column).abs();
+  final diagonal = math.min(deltaRow, deltaColumn);
+  final straight = math.max(deltaRow, deltaColumn) - diagonal;
+  return (diagonal * math.sqrt2 + straight) * grid.cellSize * grid.minimumCost;
+}
+
+List<_GridCell> _removeCollinearCells(List<_GridCell> cells) {
+  if (cells.length <= 2) return cells;
+  final result = <_GridCell>[cells.first];
+  var previousRowDirection = cells[1].row - cells[0].row;
+  var previousColumnDirection = cells[1].column - cells[0].column;
+  for (var index = 1; index < cells.length - 1; index++) {
+    final rowDirection = cells[index + 1].row - cells[index].row;
+    final columnDirection = cells[index + 1].column - cells[index].column;
+    if (rowDirection != previousRowDirection ||
+        columnDirection != previousColumnDirection) {
+      result.add(cells[index]);
+    }
+    previousRowDirection = rowDirection;
+    previousColumnDirection = columnDirection;
+  }
+  result.add(cells.last);
+  return result;
+}
+
+ArcGISPoint _cellCenter({
+  required _GridCell cell,
+  required int rows,
+  required double xMin,
+  required double yMin,
+  required double cellSize,
+  required SpatialReference spatialReference,
+}) {
+  return ArcGISPoint(
+    x: xMin + (cell.column + 0.5) * cellSize,
+    y: yMin + (rows - cell.row - 0.5) * cellSize,
+    spatialReference: spatialReference,
+  );
+}
+
+class _QueueEntry {
+  const _QueueEntry(this.index, this.priority);
+
+  final int index;
+  final double priority;
+}
+
+class _MinHeap {
+  final List<_QueueEntry> _values = [];
+
+  bool get isNotEmpty => _values.isNotEmpty;
+
+  void add(_QueueEntry value) {
+    _values.add(value);
+    var child = _values.length - 1;
+    while (child > 0) {
+      final parent = (child - 1) ~/ 2;
+      if (_values[parent].priority <= value.priority) break;
+      _values[child] = _values[parent];
+      child = parent;
+    }
+    _values[child] = value;
+  }
+
+  _QueueEntry removeFirst() {
+    final first = _values.first;
+    final last = _values.removeLast();
+    if (_values.isEmpty) return first;
+
+    var parent = 0;
+    while (true) {
+      final left = parent * 2 + 1;
+      if (left >= _values.length) break;
+      final right = left + 1;
+      var child = left;
+      if (right < _values.length &&
+          _values[right].priority < _values[left].priority) {
+        child = right;
+      }
+      if (_values[child].priority >= last.priority) break;
+      _values[parent] = _values[child];
+      parent = child;
+    }
+    _values[parent] = last;
+    return first;
+  }
+}
