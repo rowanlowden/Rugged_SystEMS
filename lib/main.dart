@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:rugged_systems/offroad_route.dart';
 import 'app.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  solvePresetLeastCostPath();
   runApp(const OfflineNavigationApp());
 }
 
