@@ -1,9 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../utils/consts.dart';
+
 class PatientRouteSheet extends StatelessWidget {
-  const PatientRouteSheet({super.key, required this.scrollController});
+  const PatientRouteSheet({
+    super.key,
+    required this.scrollController,
+    required this.onStartNavigation,
+    required this.routeSegments,
+  });
 
   final ScrollController scrollController;
+  final VoidCallback onStartNavigation;
+  final List<RouteSegmentDemo> routeSegments;
 
   @override
   Widget build(BuildContext context) {
@@ -11,7 +20,7 @@ class PatientRouteSheet extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: theme.colorScheme.surface.withValues(alpha: 0.97),
+        color: const Color(0xE8101317),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
         boxShadow: const [
           BoxShadow(
@@ -36,37 +45,58 @@ class PatientRouteSheet extends StatelessWidget {
             child: ListView(
               controller: scrollController,
               padding: const EdgeInsets.fromLTRB(18, 14, 18, 26),
-              children: const [
-                _InfoRow(label: 'Patient Status', value: 'Stable, conscious'),
-                SizedBox(height: 8),
-                _InfoRow(label: 'Type of Accident', value: 'ATV rollover'),
-                SizedBox(height: 16),
-                _RouteTableHeader(),
-                SizedBox(height: 10),
-                _RouteRow(
-                  color: Colors.black,
-                  routeName: 'Paved',
-                  distance: '8.6 mi',
-                  etaMinutes: '14 min',
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1D2229),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF2A3038)),
+                  ),
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'ROUTE SEGMENT ANALYTICS',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: const Color(0xFFC8CCCC),
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      for (var i = 0; i < routeSegments.length; i++) ...[
+                        _RouteSegmentRow(
+                          color: routeSegments[i].color,
+                          routeName: routeSegments[i].name,
+                          distance: routeSegments[i].distance,
+                          eta: routeSegments[i].eta,
+                        ),
+                        if (i < routeSegments.length - 1)
+                          const SizedBox(height: 8),
+                      ],
+                      const SizedBox(height: 14),
+                      FilledButton(
+                        onPressed: onStartNavigation,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E3B1B),
+                          foregroundColor: const Color(0xFFC8CCCC),
+                          minimumSize: const Size.fromHeight(50),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                        ),
+                        child: Text(
+                          'START ROAD NAVIGATION',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                SizedBox(height: 8),
-                _RouteRow(
-                  color: Colors.blue,
-                  routeName: 'Offroad',
-                  distance: '3.2 mi',
-                  etaMinutes: '11 min',
-                ),
-                SizedBox(height: 8),
-                _RouteRow(
-                  color: Colors.red,
-                  routeName: 'Walking',
-                  distance: '0.4 mi',
-                  etaMinutes: '7 min',
-                ),
-                SizedBox(height: 14),
-                Divider(height: 1),
-                SizedBox(height: 12),
-                _TotalTimeRow(totalMinutes: '32 min total'),
               ],
             ),
           ),
@@ -76,94 +106,47 @@ class PatientRouteSheet extends StatelessWidget {
   }
 }
 
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Row(
-      children: [
-        SizedBox(
-          width: 136,
-          child: Text(
-            '$label:',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _RouteTableHeader extends StatelessWidget {
-  const _RouteTableHeader();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textStyle = theme.textTheme.labelLarge?.copyWith(
-      fontWeight: FontWeight.w700,
-      color: theme.colorScheme.onSurfaceVariant,
-    );
-
-    return Row(
-      children: [
-        Expanded(flex: 4, child: Text('Route Key', style: textStyle)),
-        Expanded(flex: 2, child: Text('Distance', style: textStyle)),
-        Expanded(flex: 2, child: Text('ETA', style: textStyle)),
-      ],
-    );
-  }
-}
-
-class _RouteRow extends StatelessWidget {
-  const _RouteRow({
+class _RouteSegmentRow extends StatelessWidget {
+  const _RouteSegmentRow({
     required this.color,
     required this.routeName,
     required this.distance,
-    required this.etaMinutes,
+    required this.eta,
   });
 
   final Color color;
   final String routeName;
   final String distance;
-  final String etaMinutes;
+  final String eta;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
-          flex: 4,
+          flex: 5,
           child: Row(
             children: [
               Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                width: 28,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: color,
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
               const SizedBox(width: 10),
-              Text(
-                routeName,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
+              Expanded(
+                child: Text(
+                  routeName,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: const Color(0xFFC8CCCC),
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -171,40 +154,23 @@ class _RouteRow extends StatelessWidget {
         ),
         Expanded(
           flex: 2,
-          child: Text(distance, style: theme.textTheme.bodyMedium),
-        ),
-        Expanded(
-          flex: 2,
-          child: Text(etaMinutes, style: theme.textTheme.bodyMedium),
-        ),
-      ],
-    );
-  }
-}
-
-class _TotalTimeRow extends StatelessWidget {
-  const _TotalTimeRow({required this.totalMinutes});
-
-  final String totalMinutes;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          'Total Time',
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w700,
+          child: Text(
+            distance,
+            textAlign: TextAlign.right,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: const Color(0xFFB3BDC9),
+            ),
           ),
         ),
-        Text(
-          totalMinutes,
-          style: theme.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-            color: theme.colorScheme.primary,
+        const SizedBox(width: 8),
+        Expanded(
+          flex: 2,
+          child: Text(
+            eta,
+            textAlign: TextAlign.right,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: const Color(0xFFB3BDC9),
+            ),
           ),
         ),
       ],
