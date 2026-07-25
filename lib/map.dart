@@ -4,8 +4,17 @@ import 'package:arcgis_maps/arcgis_maps.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'utils/consts.dart';
+import 'widgets/current_dispatch_overlay.dart';
+import 'widgets/dispatch_call_panel.dart';
+import 'widgets/hospital_navigation_hud.dart';
+import 'widgets/hospital_route_panel.dart';
 import 'widgets/map_header_bar.dart';
+import 'widgets/navigation_phase.dart';
+import 'widgets/navigation_phase_hud.dart';
+import 'widgets/navigation_status_panel.dart';
 import 'widgets/patient_route_sheet.dart';
+import 'widgets/route_summary_bar.dart';
 
 const offlineMapAssetDirectory = 'assets/offline/';
 
@@ -14,12 +23,14 @@ class OfflineNavigationApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const OfflineNavigationPage();
+    return const OfflineNavigationPage(username: 'Operator');
   }
 }
 
 class OfflineNavigationPage extends StatefulWidget {
-  const OfflineNavigationPage({super.key});
+  const OfflineNavigationPage({super.key, required this.username});
+
+  final String username;
 
   @override
   State<OfflineNavigationPage> createState() => _OfflineNavigationPageState();
@@ -28,23 +39,33 @@ class OfflineNavigationPage extends StatefulWidget {
 class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   final ArcGISMapViewController _mapViewController =
       ArcGISMapView.createController();
-  static const _incomingDispatchCoordinates = 'N 34.1341, W 116.3131';
+  late final DemoIncidentProfile _profile;
 
   bool _mapViewReady = false;
   bool _mapLoaded = false;
   bool _locationEnabled = false;
   bool _busy = true;
-  bool _dispatchBannerShown = false;
+  bool _serviceFault = false;
+  bool _dispatchCallShown = false;
+  bool _dispatchCallAccepted = false;
+  bool _currentDispatchOpen = false;
+  bool _hospitalNavigationMode = false;
+  NavigationPhase? _activePhase;
 
   String _status = 'Loading offline map…';
-  String _coordinatesLabel = 'N 34.1328, W 116.3106';
+  String _coordinatesLabel = '';
+
+  bool get _systemOn => _mapLoaded && !_serviceFault;
+  bool get _navigationStarted => _activePhase != null;
 
   @override
   void initState() {
     super.initState();
+    _profile = demoProfileForUsername(widget.username);
+    _coordinatesLabel = _profile.stagingCoordinates;
     _loadOfflineMap();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showDispatchCallBanner();
+      _showDispatchCallNotification();
     });
   }
 
@@ -78,14 +99,17 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       setState(() {
         _mapLoaded = true;
         _busy = false;
+        _serviceFault = false;
         _status = 'Offline map loaded: ${_fileNameFromPath(mmpkAssetPath)}';
       });
     } on ArcGISException catch (error) {
+      _serviceFault = true;
       _setStatus(
         'Could not load the offline map:\n${error.message}',
         busy: false,
       );
     } catch (error) {
+      _serviceFault = true;
       _setStatus('Could not load the offline map:\n$error', busy: false);
     }
   }
@@ -160,8 +184,10 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
         _status = 'Following current location';
       });
     } on ArcGISException catch (error) {
+      _serviceFault = true;
       _setStatus('Location unavailable: ${error.message}', busy: false);
     } catch (error) {
+      _serviceFault = true;
       _setStatus('Location unavailable: $error', busy: false);
     }
   }
@@ -212,41 +238,16 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> _showDispatchCallBanner() async {
-    if (!mounted || _dispatchBannerShown) {
+  Future<void> _showDispatchCallNotification() async {
+    if (!mounted || _dispatchCallShown) {
       return;
     }
 
-    _dispatchBannerShown = true;
-
-    final messenger = ScaffoldMessenger.of(context);
-    messenger
-      ..hideCurrentMaterialBanner()
-      ..showMaterialBanner(
-        MaterialBanner(
-          content: const Text(
-            'Incoming call from dispatch... updating coordinates.',
-          ),
-          leading: const Icon(Icons.phone_in_talk),
-          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-          actions: [
-            TextButton(
-              onPressed: messenger.hideCurrentMaterialBanner,
-              child: const Text('Dismiss'),
-            ),
-          ],
-        ),
-      );
-
-    await Future<void>.delayed(const Duration(seconds: 2));
-
-    if (!mounted) {
-      return;
-    }
+    _dispatchCallShown = true;
 
     setState(() {
-      _coordinatesLabel = _incomingDispatchCoordinates;
-      _status = 'Dispatch updated coordinates';
+      _dispatchCallAccepted = false;
+      _status = 'Incoming dispatch call';
     });
 
     await Future<void>.delayed(const Duration(seconds: 2));
@@ -255,7 +256,119 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       return;
     }
 
-    messenger.hideCurrentMaterialBanner();
+    setState(() {
+      _coordinatesLabel = _profile.incidentCoordinates;
+      _status = 'Dispatch updated coordinates';
+    });
+  }
+
+  void _acceptDispatchCall() {
+    setState(() {
+      _dispatchCallAccepted = true;
+      _status = 'Dispatch accepted. Navigate to patient.';
+    });
+  }
+
+  void _openCurrentDispatch() {
+    setState(() {
+      _currentDispatchOpen = true;
+    });
+  }
+
+  void _closeCurrentDispatch() {
+    setState(() {
+      _currentDispatchOpen = false;
+    });
+  }
+
+  void _startRoadNavigation() {
+    if (_activePhase != null) {
+      return;
+    }
+
+    setState(() {
+      _activePhase = NavigationPhase.paved;
+      _status = 'Road navigation active';
+    });
+
+    _advanceNavigationPhases();
+  }
+
+  Future<void> _advanceNavigationPhases() async {
+    await Future<void>.delayed(const Duration(seconds: 6));
+    if (!mounted || _activePhase != NavigationPhase.paved) {
+      return;
+    }
+
+    setState(() {
+      _activePhase = NavigationPhase.offroad;
+      _status = 'Transitioning to offroad segment';
+    });
+
+    await Future<void>.delayed(const Duration(seconds: 6));
+    if (!mounted || _activePhase != NavigationPhase.offroad) {
+      return;
+    }
+
+    setState(() {
+      _activePhase = NavigationPhase.walking;
+      _status = 'Walking segment active';
+    });
+  }
+
+  void _setNavigationPhase(NavigationPhase phase) {
+    setState(() {
+      _activePhase = phase;
+      _status = _statusForPhase(phase);
+    });
+  }
+
+  void _goToNextPhase() {
+    final currentPhase = _activePhase;
+    if (currentPhase == null) {
+      return;
+    }
+
+    switch (currentPhase) {
+      case NavigationPhase.paved:
+        _setNavigationPhase(NavigationPhase.offroad);
+        break;
+      case NavigationPhase.offroad:
+        _setNavigationPhase(NavigationPhase.walking);
+        break;
+      case NavigationPhase.walking:
+        _setNavigationPhase(NavigationPhase.walking);
+        break;
+    }
+  }
+
+  String _statusForPhase(NavigationPhase phase) {
+    switch (phase) {
+      case NavigationPhase.paved:
+        return 'Road navigation active';
+      case NavigationPhase.offroad:
+        return 'Transitioning to offroad segment';
+      case NavigationPhase.walking:
+        return 'Walking segment active';
+    }
+  }
+
+  void _markPatientReached() {
+    setState(() {
+      _hospitalNavigationMode = true;
+      _activePhase = null;
+      _status = 'Patient secured. Hospital navigation available.';
+    });
+
+    _showMessage('Patient secured. Ready to route to hospital.');
+  }
+
+  void _startHospitalRoute() {
+    _showMessage('Starting hospital route...');
+  }
+
+  void _logout() {
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
   }
 
   @override
@@ -271,8 +384,15 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       appBar: AppBar(
         title: const Text('Rugged SystEMS'),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(74),
-          child: MapHeaderBar(coordinatesLabel: _coordinatesLabel),
+          preferredSize: const Size.fromHeight(148),
+          child: MapHeaderBar(
+            coordinatesLabel: _coordinatesLabel,
+            username: widget.username,
+            showCurrentDispatch: _dispatchCallAccepted,
+            onOpenCurrentDispatch: _openCurrentDispatch,
+            onLogout: _logout,
+            systemOn: _systemOn,
+          ),
         ),
         actions: [
           IconButton(
@@ -293,22 +413,107 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
               setState(() => _mapViewReady = true);
             },
           ),
-          SafeArea(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: _StatusCard(message: _status, showProgress: _busy),
+          if (!_navigationStarted && !_hospitalNavigationMode)
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: RouteSummaryBar(
+                  totalResponseTime: _profile.totalResponseTime,
+                  totalDistance: _profile.totalDistance,
+                ),
+              ),
             ),
-          ),
-          DraggableScrollableSheet(
-            initialChildSize: 0.22,
-            minChildSize: 0.12,
-            maxChildSize: 0.52,
-            snap: true,
-            snapSizes: const [0.22, 0.52],
-            builder: (context, scrollController) {
-              return PatientRouteSheet(scrollController: scrollController);
-            },
-          ),
+          if (_navigationStarted && !_hospitalNavigationMode)
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: NavigationPhaseHud(
+                  phase: _activePhase!,
+                  routeSegments: _profile.routeSegments,
+                  pavedInstructionDistance: _profile.pavedInstructionDistance,
+                  pavedInstructionText: _profile.pavedInstructionText,
+                  offroadAdvisoryTitle: _profile.offroadAdvisoryTitle,
+                  offroadAdvisoryDetails: _profile.offroadAdvisoryDetails,
+                  walkingAdvisoryTitle: _profile.walkingAdvisoryTitle,
+                  walkingAdvisoryDetails: _profile.walkingAdvisoryDetails,
+                  onPhaseSelected: _setNavigationPhase,
+                  onNextPhase: _goToNextPhase,
+                ),
+              ),
+            ),
+          if (_hospitalNavigationMode)
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: HospitalNavigationHud(profile: _profile),
+              ),
+            ),
+          if (_busy || _serviceFault)
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 74),
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: _StatusCard(message: _status, showProgress: _busy),
+                ),
+              ),
+            ),
+          if (!_navigationStarted && !_hospitalNavigationMode)
+            DraggableScrollableSheet(
+              initialChildSize: 0.22,
+              minChildSize: 0.12,
+              maxChildSize: 0.52,
+              snap: true,
+              snapSizes: const [0.22, 0.52],
+              builder: (context, scrollController) {
+                return PatientRouteSheet(
+                  scrollController: scrollController,
+                  onStartNavigation: _startRoadNavigation,
+                  routeSegments: _profile.routeSegments,
+                );
+              },
+            ),
+          if (_navigationStarted && !_hospitalNavigationMode)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: SafeArea(
+                top: false,
+                child: NavigationStatusPanel(
+                  phase: _activePhase!,
+                  profile: _profile,
+                  onPatientReached: _markPatientReached,
+                ),
+              ),
+            ),
+          if (_hospitalNavigationMode)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: SafeArea(
+                top: false,
+                child: HospitalRoutePanel(
+                  profile: _profile,
+                  onStartHospitalRoute: _startHospitalRoute,
+                ),
+              ),
+            ),
+          if (_dispatchCallShown && !_dispatchCallAccepted)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: SafeArea(
+                top: false,
+                child: DispatchCallPanel(
+                  profile: _profile,
+                  onAcceptNavigate: _acceptDispatchCall,
+                ),
+              ),
+            ),
+          if (_currentDispatchOpen)
+            Positioned.fill(
+              child: CurrentDispatchOverlay(
+                profile: _profile,
+                onClose: _closeCurrentDispatch,
+              ),
+            ),
         ],
       ),
       floatingActionButton: Column(

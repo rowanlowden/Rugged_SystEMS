@@ -26,6 +26,7 @@ class RuggedSystemsApp extends StatelessWidget {
           border: OutlineInputBorder(),
         ),
       ),
+      routes: {'/login': (context) => const LoginPage()},
       home: const LoginPage(),
     );
   }
