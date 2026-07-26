@@ -58,7 +58,7 @@ class HospitalNavigationHud extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: const BoxDecoration(
-                  color: const Color(0xFFC8CCCC),
+                  color: Color(0xFFC8CCCC),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
