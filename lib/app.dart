@@ -4,6 +4,9 @@ import 'package:arcgis_maps/arcgis_maps.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'offroad_route.dart';
+import 'plot_offroad_route.dart';
+import 'plot_onroad_route.dart';
 import 'utils/consts.dart';
 import 'widgets/current_dispatch_overlay.dart';
 import 'widgets/dispatch_call_panel.dart';
@@ -17,6 +20,8 @@ import 'widgets/patient_route_sheet.dart';
 import 'widgets/route_summary_bar.dart';
 
 const offlineMapAssetDirectory = 'assets/offline/';
+const _onRoadStartAddress = '7774 COUNTY ROAD P, WESTBY, WI 54667';
+const _onRoadDestinationAddress = '7880 COUNTY ROAD P, WESTBY, WI 54667';
 
 class OfflineNavigationApp extends StatelessWidget {
   const OfflineNavigationApp({super.key});
@@ -39,6 +44,8 @@ class OfflineNavigationPage extends StatefulWidget {
 class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   final ArcGISMapViewController _mapViewController =
       ArcGISMapView.createController();
+  late final OffroadRoutePlotter _offroadRoutePlotter;
+  late final OnRoadRoutePlotter _onRoadRoutePlotter;
   late final DemoIncidentProfile _profile;
 
   bool _mapViewReady = false;
@@ -51,6 +58,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   bool _currentDispatchOpen = false;
   bool _hospitalNavigationMode = false;
   NavigationPhase? _activePhase;
+  LeastCostPathResult? _offroadRoute;
 
   String _status = 'Loading offline map…';
   String _coordinatesLabel = '';
@@ -63,6 +71,8 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     super.initState();
     _profile = demoProfileForUsername(widget.username);
     _coordinatesLabel = _profile.stagingCoordinates;
+    _offroadRoutePlotter = OffroadRoutePlotter(_mapViewController);
+    _onRoadRoutePlotter = OnRoadRoutePlotter(_mapViewController);
     _loadOfflineMap();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showDispatchCallNotification();
@@ -92,7 +102,9 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
         throw StateError('The mobile map package does not contain any maps.');
       }
 
-      _mapViewController.arcGISMap = package.maps.first;
+      final map = package.maps.first;
+      await map.load();
+      _mapViewController.arcGISMap = map;
 
       if (!mounted) return;
 
@@ -206,19 +218,54 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     });
   }
 
-  void _createRoute() {
-    // Boilerplate extension point:
-    //
-    // 1. Obtain the transportation network from the loaded MMPK.
-    // 2. Create a RouteTask using that local network.
-    // 3. Add the start and destination stops.
-    // 4. Solve the route entirely offline.
-    // 5. Display the route in a GraphicsOverlay.
-    // 6. Create a RouteTracker for turn-by-turn navigation.
-    _showMessage(
-      'Route setup placeholder: connect this action to the '
-      'transportation network stored in the offline map package.',
-    );
+  Future<bool> _createRoute() async {
+    if (!_mapLoaded || !_mapViewReady) {
+      _showMessage('Wait for the offline map to finish loading.');
+      return false;
+    }
+
+    _setStatus('Generating on-road and off-road routes…', busy: true);
+    try {
+      if (_onRoadRoutePlotter.service == null) {
+        await _onRoadRoutePlotter.loadService();
+      }
+      final onRoadRoute = await _onRoadRoutePlotter.generateRoute(
+        startAddress: _onRoadStartAddress,
+        destinationAddress: _onRoadDestinationAddress,
+      );
+      final offroadRoute = await _offroadRoutePlotter
+          .solveFromOnRoadDestination(
+            onRoadDestination: onRoadRoute.destination,
+            maxDistanceMeters: 250,
+          );
+      if (!mounted) return false;
+
+      await _offroadRoutePlotter.displayRoute(offroadRoute, zoom: false);
+      await _onRoadRoutePlotter.displayRoute(onRoadRoute);
+      if (!mounted) return false;
+
+      setState(() {
+        _offroadRoute = offroadRoute;
+        _busy = false;
+        _serviceFault = false;
+        _status =
+            'On-road and off-road routes are ready. '
+            'Showing the on-road route.';
+      });
+      _showMessage('Both routes are ready. Showing the on-road route.');
+      return true;
+    } on ArcGISException catch (error) {
+      final message = 'Could not generate routes: ${error.message}';
+      debugPrint(message);
+      _setStatus(message, busy: false);
+      _showMessage(message);
+    } catch (error, stackTrace) {
+      final message = 'Could not generate routes: $error';
+      debugPrint('$message\n$stackTrace');
+      _setStatus(message, busy: false);
+      _showMessage(message);
+    }
+    return false;
   }
 
   void _setStatus(String status, {required bool busy}) {
@@ -281,15 +328,17 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     });
   }
 
-  void _startRoadNavigation() {
-    if (_activePhase != null) {
+  Future<void> _startRoadNavigation() async {
+    if (_activePhase != null || _busy) {
       return;
     }
 
-    setState(() {
-      _activePhase = NavigationPhase.paved;
-      _status = 'Road navigation active';
-    });
+    final routesCreated = await _createRoute();
+    if (!routesCreated || !mounted) {
+      return;
+    }
+
+    await _setNavigationPhase(NavigationPhase.paved);
 
     _advanceNavigationPhases();
   }
@@ -300,27 +349,37 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       return;
     }
 
-    setState(() {
-      _activePhase = NavigationPhase.offroad;
-      _status = 'Transitioning to offroad segment';
-    });
+    await _setNavigationPhase(NavigationPhase.offroad);
 
     await Future<void>.delayed(const Duration(seconds: 6));
     if (!mounted || _activePhase != NavigationPhase.offroad) {
       return;
     }
 
-    setState(() {
-      _activePhase = NavigationPhase.walking;
-      _status = 'Walking segment active';
-    });
+    await _setNavigationPhase(NavigationPhase.walking);
   }
 
-  void _setNavigationPhase(NavigationPhase phase) {
+  Future<void> _setNavigationPhase(NavigationPhase phase) async {
     setState(() {
       _activePhase = phase;
       _status = _statusForPhase(phase);
     });
+
+    if (phase == NavigationPhase.offroad) {
+      final route = _offroadRoute;
+      if (route != null) {
+        try {
+          await _offroadRoutePlotter.displayRoute(route);
+        } on ArcGISException catch (error) {
+          _setStatus(
+            'Could not zoom to off-road route: ${error.message}',
+            busy: false,
+          );
+        } catch (error) {
+          _setStatus('Could not zoom to off-road route: $error', busy: false);
+        }
+      }
+    }
   }
 
   void _goToNextPhase() {
@@ -374,6 +433,8 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   @override
   void dispose() {
     _mapViewController.locationDisplay.stop();
+    _offroadRoutePlotter.detach();
+    _onRoadRoutePlotter.detach();
     _mapViewController.dispose();
     super.dispose();
   }
@@ -410,6 +471,8 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
             controllerProvider: () => _mapViewController,
             onMapViewReady: () {
               if (!mounted) return;
+              _offroadRoutePlotter.attach();
+              _onRoadRoutePlotter.attach();
               setState(() => _mapViewReady = true);
             },
           ),
@@ -525,13 +588,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
             tooltip: 'Recenter',
             onPressed: _mapLoaded ? _recenter : null,
             child: const Icon(Icons.gps_fixed),
-          ),
-          const SizedBox(height: 12),
-          FloatingActionButton.extended(
-            heroTag: 'route',
-            onPressed: _mapLoaded ? _createRoute : null,
-            icon: const Icon(Icons.route),
-            label: const Text('Route'),
           ),
         ],
       ),

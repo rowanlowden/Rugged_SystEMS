@@ -6,6 +6,8 @@ import 'package:arcgis_maps/arcgis_maps.dart';
 import 'package:flutter/foundation.dart' show FlutterError, debugPrint;
 import 'package:flutter/services.dart';
 
+const offroadGridWkid = 4326;
+
 /// Solves the build-time configured least-cost path from one local Esri ASCII
 /// cost grid. No display raster, map view, network service, or user input is
 /// used.
@@ -20,16 +22,18 @@ import 'package:flutter/services.dart';
 /// OFFLINE_COST_GRID_WKID=32615
 /// ```
 Future<LeastCostPathResult> solvePresetLeastCostPath() async {
-  const gridPath = String.fromEnvironment('OFFLINE_COST_GRID_PATH',
-    defaultValue: 'test_data/test.asc');
-  const wkid = 4326;
+  debugPrint('Starting least-cost-path analysis using an Esri ASCII grid...');
+  const gridPath = String.fromEnvironment(
+    'OFFLINE_COST_GRID_PATH',
+    defaultValue: 'test_data/test.asc',
+  );
+  const wkid = offroadGridWkid;
 
   if (gridPath.trim().isEmpty) {
     throw const FormatException(
       'OFFLINE_COST_GRID_PATH must identify an app-readable Esri ASCII grid.',
     );
   }
-
 
   final localGridPath = await _resolveCostGridPath(gridPath);
 
@@ -42,6 +46,26 @@ Future<LeastCostPathResult> solvePresetLeastCostPath() async {
     'accumulated cost ${result.accumulatedCost}.',
   );
   return result;
+}
+
+/// Solves from an on-road destination to a random connected off-road point no
+/// more than [maxDistanceMeters] away.
+Future<LeastCostPathResult> solveLeastCostPathFromOnRoadDestination({
+  required ArcGISPoint start,
+  double maxDistanceMeters = 250,
+}) async {
+  const gridPath = String.fromEnvironment(
+    'OFFLINE_COST_GRID_PATH',
+    defaultValue: 'test_data/test.asc',
+  );
+  final localGridPath = await _resolveCostGridPath(gridPath);
+  return OfflineLeastCostPathSolver(
+    costGridPath: localGridPath,
+    spatialReferenceWkid: offroadGridWkid,
+  ).solveFromStartWithRandomDestination(
+    start: start,
+    maxDistanceMeters: maxDistanceMeters,
+  );
 }
 
 Future<String> _resolveCostGridPath(String configuredPath) async {
@@ -208,6 +232,49 @@ class OfflineLeastCostPathSolver {
     );
   }
 
+  /// Uses [start] as the grid handoff point and selects a distinct reachable
+  /// destination whose geodesic distance is within [maxDistanceMeters].
+  Future<LeastCostPathResult> solveFromStartWithRandomDestination({
+    required ArcGISPoint start,
+    double maxDistanceMeters = 250,
+  }) async {
+    _validatePointSpatialReference(start, 'start');
+    if (!maxDistanceMeters.isFinite || maxDistanceMeters <= 0) {
+      throw ArgumentError.value(
+        maxDistanceMeters,
+        'maxDistanceMeters',
+        'Must be a positive finite distance.',
+      );
+    }
+    if (spatialReferenceWkid != offroadGridWkid) {
+      throw UnsupportedError(
+        'Random destinations constrained in meters require WKID '
+        '$offroadGridWkid.',
+      );
+    }
+
+    final path = costGridPath.trim();
+    if (path.isEmpty) {
+      throw const FormatException('The ASCII cost-grid path cannot be empty.');
+    }
+    final startX = start.x;
+    final startY = start.y;
+    final coordinates = await Isolate.run(
+      () => _loadAsciiGridAndSelectNearbyRandomCoordinates(
+        path: path,
+        startX: startX,
+        startY: startY,
+        maxDistanceMeters: maxDistanceMeters,
+      ),
+    );
+    return solveCoordinates(
+      startX: coordinates.startX,
+      startY: coordinates.startY,
+      destinationX: coordinates.destinationX,
+      destinationY: coordinates.destinationY,
+    );
+  }
+
   void _validatePointSpatialReference(ArcGISPoint point, String name) {
     final pointSpatialReference = point.spatialReference;
     if (pointSpatialReference == null) {
@@ -296,10 +363,93 @@ _RandomRouteCoordinates _loadAsciiGridAndSelectRandomCoordinates(String path) {
   );
 }
 
+_RandomRouteCoordinates _loadAsciiGridAndSelectNearbyRandomCoordinates({
+  required String path,
+  required double startX,
+  required double startY,
+  required double maxDistanceMeters,
+}) {
+  final file = File(path);
+  if (!file.existsSync()) {
+    throw FileSystemException('ASCII cost grid not found', path);
+  }
+
+  final grid = _AsciiCostGrid.parse(file.readAsStringSync());
+  final start = grid.cellAt(startX, startY);
+  if (start == null) {
+    throw const FormatException(
+      'The on-road destination is outside the off-road cost grid.',
+    );
+  }
+  if (!grid.isTraversable(start)) {
+    throw const FormatException(
+      'The on-road destination falls on a NoData or negative-cost grid cell.',
+    );
+  }
+
+  final startCenterX = _cellCenterX(grid, start);
+  final startCenterY = _cellCenterY(grid, start);
+  final candidates = _reachableCells(grid, start)
+      .where((cell) => cell != start)
+      .where(
+        (cell) =>
+            _geodesicDistanceMeters(
+              startCenterX,
+              startCenterY,
+              _cellCenterX(grid, cell),
+              _cellCenterY(grid, cell),
+            ) <=
+            maxDistanceMeters,
+      )
+      .toList();
+  if (candidates.isEmpty) {
+    throw PathNotFoundException(
+      'No distinct reachable off-road cell exists within '
+      '${maxDistanceMeters.toStringAsFixed(0)} meters of the on-road destination.',
+    );
+  }
+
+  final destination = candidates[math.Random().nextInt(candidates.length)];
+  return _RandomRouteCoordinates(
+    startX: startCenterX,
+    startY: startCenterY,
+    destinationX: _cellCenterX(grid, destination),
+    destinationY: _cellCenterY(grid, destination),
+  );
+}
+
+double _geodesicDistanceMeters(
+  double longitudeA,
+  double latitudeA,
+  double longitudeB,
+  double latitudeB,
+) {
+  const earthRadiusMeters = 6371008.8;
+  final latitudeDelta = _degreesToRadians(latitudeB - latitudeA);
+  final longitudeDelta = _degreesToRadians(longitudeB - longitudeA);
+  final latitudeARadians = _degreesToRadians(latitudeA);
+  final latitudeBRadians = _degreesToRadians(latitudeB);
+  final haversine =
+      math.sin(latitudeDelta / 2) * math.sin(latitudeDelta / 2) +
+      math.cos(latitudeARadians) *
+          math.cos(latitudeBRadians) *
+          math.sin(longitudeDelta / 2) *
+          math.sin(longitudeDelta / 2);
+  return 2 * earthRadiusMeters * math.asin(math.sqrt(haversine));
+}
+
+double _degreesToRadians(double degrees) => degrees * math.pi / 180;
+
 List<_GridCell> _reachableCells(_AsciiCostGrid grid, _GridCell start) {
   const directions = <(int, int)>[
-    (-1, 0), (1, 0), (0, -1), (0, 1),
-    (-1, -1), (-1, 1), (1, -1), (1, 1),
+    (-1, 0),
+    (1, 0),
+    (0, -1),
+    (0, 1),
+    (-1, -1),
+    (-1, 1),
+    (1, -1),
+    (1, 1),
   ];
   final cells = <_GridCell>[start];
   final visited = <int>{grid.indexOf(start)};
@@ -316,7 +466,8 @@ List<_GridCell> _reachableCells(_AsciiCostGrid grid, _GridCell start) {
       final next = _GridCell(row, column);
       final nextIndex = grid.indexOf(next);
       if (visited.contains(nextIndex) || !grid.isTraversable(next)) continue;
-      if (rowDelta != 0 && columnDelta != 0 &&
+      if (rowDelta != 0 &&
+          columnDelta != 0 &&
           (!grid.isTraversable(_GridCell(current.row, column)) ||
               !grid.isTraversable(_GridCell(row, current.column)))) {
         continue;
