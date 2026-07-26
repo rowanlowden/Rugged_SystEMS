@@ -67,6 +67,8 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   NavigationPhase? _activePhase;
   OnRoadRoute? _onRoadRoute;
   LeastCostPathResult? _offroadRoute;
+  Polyline? _offroadDrivePolyline;
+  Polyline? _walkingPolyline;
   Future<void>? _offroadSolveFuture;
   Object? _offroadSolveError;
   bool _offroadTransitionRequested = false;
@@ -74,6 +76,12 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   Timer? _speedSimulationTimer;
   String? _pavedSpeedOverride;
   String? _offroadSpeedOverride;
+  double _pavedDistanceMiles = 0;
+  double _offroadDistanceMiles = 0;
+  double _walkingDistanceMiles = 0;
+  double _pavedProgress = 0;
+  double _offroadProgress = 0;
+  double _walkingProgress = 0;
 
   String _status = 'Loading offline map…';
   String _coordinatesLabel = '';
@@ -244,8 +252,16 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       setState(() {
         _onRoadRoute = onRoadRoute;
         _offroadRoute = null;
+        _offroadDrivePolyline = null;
+        _walkingPolyline = null;
         _offroadSolveError = null;
         _offroadTransitionRequested = false;
+        _pavedDistanceMiles = _polylineMiles(onRoadRoute.polyline);
+        _offroadDistanceMiles = 0;
+        _walkingDistanceMiles = 0;
+        _pavedProgress = 0;
+        _offroadProgress = 0;
+        _walkingProgress = 0;
         _busy = false;
         _serviceFault = false;
         _coordinatesLabel = _fixedCoordinatesLabel;
@@ -286,6 +302,15 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
 
       setState(() {
         _offroadRoute = route;
+        final split = route.splitAtFirstWeightAbove(
+          offroadWalkingWeightThreshold,
+        );
+        _offroadDrivePolyline = split?.beforeAlternate ?? route.polyline;
+        _walkingPolyline = split?.alternate;
+        _offroadDistanceMiles = _polylineMiles(_offroadDrivePolyline!);
+        _walkingDistanceMiles = _walkingPolyline == null
+            ? 0
+            : _polylineMiles(_walkingPolyline!);
         _offroadSolveError = null;
         if (_activePhase == NavigationPhase.paved) {
           _status = 'Road navigation active. Off-road route ready.';
@@ -390,6 +415,10 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
         metersPerSecond: 200,
         locationDisplay: _mapViewController.locationDisplay,
         onFinished: () => unawaited(_startOffroadSimulation()),
+        onProgress: (progress) {
+          if (!mounted || _activePhase != NavigationPhase.paved) return;
+          setState(() => _pavedProgress = progress);
+        },
       );
       _mapViewController.locationDisplay.start();
       if (!mounted) return;
@@ -441,6 +470,11 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     }
 
     final split = route.splitAtFirstWeightAbove(offroadWalkingWeightThreshold);
+    final offroadPolyline = split?.beforeAlternate ?? route.polyline;
+    setState(() {
+      _pavedProgress = 1;
+      _offroadProgress = 0;
+    });
     await _setNavigationPhase(NavigationPhase.offroad);
     if (!mounted || _activePhase != NavigationPhase.offroad) return;
 
@@ -451,12 +485,16 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
 
     try {
       await _locationSpoofer.start(
-        paths: [split?.beforeAlternate ?? route.polyline],
+        paths: [offroadPolyline],
         metersPerSecond: 12,
         locationDisplay: _mapViewController.locationDisplay,
         onFinished: split == null
             ? _markSimulatedNavigationComplete
             : () => unawaited(_startWalkingSimulation(split.alternate)),
+        onProgress: (progress) {
+          if (!mounted || _activePhase != NavigationPhase.offroad) return;
+          setState(() => _offroadProgress = progress);
+        },
       );
       _mapViewController.locationDisplay.start();
     } on ArcGISException catch (error) {
@@ -472,6 +510,10 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   Future<void> _startWalkingSimulation(Polyline alternateRoute) async {
     if (!mounted || _activePhase != NavigationPhase.offroad) return;
 
+    setState(() {
+      _offroadProgress = 1;
+      _walkingProgress = 0;
+    });
     await _setNavigationPhase(NavigationPhase.walking);
     if (!mounted || _activePhase != NavigationPhase.walking) return;
 
@@ -481,6 +523,10 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
         metersPerSecond: 12,
         locationDisplay: _mapViewController.locationDisplay,
         onFinished: _markSimulatedNavigationComplete,
+        onProgress: (progress) {
+          if (!mounted || _activePhase != NavigationPhase.walking) return;
+          setState(() => _walkingProgress = progress);
+        },
       );
       _mapViewController.locationDisplay.start();
     } on ArcGISException catch (error) {
@@ -495,7 +541,10 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
 
   void _markSimulatedNavigationComplete() {
     if (!mounted) return;
-    setState(() => _status = 'Simulated navigation reached the destination.');
+    setState(() {
+      _walkingProgress = 1;
+      _status = 'Simulated navigation reached the destination.';
+    });
   }
 
   Future<void> _setNavigationPhase(NavigationPhase phase) async {
@@ -537,6 +586,9 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     setState(() {
       _hospitalNavigationMode = true;
       _activePhase = null;
+      _pavedProgress = 1;
+      _offroadProgress = 1;
+      _walkingProgress = 1;
       _status = 'Patient secured. Hospital navigation available.';
     });
     _syncSpeedSimulation();
@@ -602,6 +654,188 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
 
   void _logout() {
     Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+  }
+
+  double _polylineMiles(Polyline polyline) {
+    final projected = _projectPolylineToWgs84(polyline);
+    var meters = 0.0;
+    for (final part in projected.parts) {
+      final points = part.getPoints();
+      ArcGISPoint? previous;
+      for (final point in points) {
+        if (previous != null) {
+          meters += _haversineMeters(previous, point);
+        }
+        previous = point;
+      }
+    }
+    return meters / 1609.344;
+  }
+
+  Polyline _projectPolylineToWgs84(Polyline polyline) {
+    if (polyline.spatialReference?.wkid == 4326) {
+      return polyline;
+    }
+    final projected = GeometryEngine.project(
+      polyline,
+      outputSpatialReference: SpatialReference(wkid: 4326),
+    );
+    if (projected is! Polyline) {
+      throw StateError('Could not project route polyline to WKID 4326.');
+    }
+    return projected;
+  }
+
+  double _haversineMeters(ArcGISPoint a, ArcGISPoint b) {
+    const earthRadiusMeters = 6371000.0;
+    final lat1 = _degreesToRadians(a.y);
+    final lat2 = _degreesToRadians(b.y);
+    final dLat = _degreesToRadians(b.y - a.y);
+    final dLon = _degreesToRadians(b.x - a.x);
+    final sinLat = math.sin(dLat / 2);
+    final sinLon = math.sin(dLon / 2);
+    final h =
+        sinLat * sinLat + math.cos(lat1) * math.cos(lat2) * sinLon * sinLon;
+    final c = 2 * math.atan2(math.sqrt(h), math.sqrt(1 - h));
+    return earthRadiusMeters * c;
+  }
+
+  double _degreesToRadians(double degrees) => degrees * (math.pi / 180);
+
+  String get _livePavedRoadEtaLabel {
+    if (_pavedDistanceMiles <= 0) {
+      return _profile.pavedRoadEta;
+    }
+    final remainingMinutes = (_remainingPavedMiles / 56) * 60;
+    return '${remainingMinutes.toStringAsFixed(1)} MIN';
+  }
+
+  String get _livePavedRouteProgressLabel {
+    if (_pavedDistanceMiles <= 0) {
+      return _profile.pavedRouteProgress;
+    }
+    final traveled = (_pavedDistanceMiles - _remainingPavedMiles).clamp(
+      0,
+      _pavedDistanceMiles,
+    );
+    return '${traveled.toStringAsFixed(1)} / ${_pavedDistanceMiles.toStringAsFixed(1)} Miles';
+  }
+
+  String get _liveOffroadRoadEtaLabel {
+    if (_offroadDistanceMiles <= 0) {
+      return _offroadRoute == null
+          ? '--'
+          : _profile.routeSegments[1].eta.toUpperCase();
+    }
+    final remainingMinutes = (_remainingOffroadMiles / 12) * 60;
+    return '${remainingMinutes.toStringAsFixed(1)} MIN';
+  }
+
+  String get _liveOffroadRouteProgressLabel {
+    if (_offroadDistanceMiles <= 0) {
+      return _profile.offroadDistToExit.replaceFirst(
+        'DIST TO OFFROAD EXIT ',
+        '',
+      );
+    }
+    final traveled = (_offroadDistanceMiles - _remainingOffroadMiles).clamp(
+      0,
+      _offroadDistanceMiles,
+    );
+    return '${traveled.toStringAsFixed(1)} / ${_offroadDistanceMiles.toStringAsFixed(1)} Miles';
+  }
+
+  String get _liveWalkingDistanceLabel {
+    final remainingMeters = _remainingWalkingMiles * 1609.344;
+    if (remainingMeters < 100) {
+      return '${remainingMeters.toStringAsFixed(1)} M';
+    }
+    return '${remainingMeters.round()} M';
+  }
+
+  String get _routeTotalDistanceLabel {
+    if (!_hasComputedRouteTotals) {
+      return _profile.totalDistance;
+    }
+
+    final totalMiles =
+        _pavedDistanceMiles + _offroadDistanceMiles + _walkingDistanceBaseMiles;
+    return '${totalMiles.toStringAsFixed(2)} MI';
+  }
+
+  String get _routeTotalEtaLabel {
+    if (!_hasComputedRouteTotals) {
+      return _profile.totalResponseTime;
+    }
+
+    final totalMinutes =
+        (_pavedDistanceMiles / 56) * 60 +
+        (_offroadDistanceMiles / 12) * 60 +
+        (_walkingDistanceBaseMiles / 3) * 60;
+    return '${totalMinutes.toStringAsFixed(1)} MINS';
+  }
+
+  bool get _hasComputedRouteTotals =>
+      _pavedDistanceMiles > 0 && _offroadDistanceMiles > 0;
+
+  double get _remainingPavedMiles =>
+      (_pavedDistanceMiles * (1 - _pavedProgress)).clamp(
+        0,
+        _pavedDistanceMiles,
+      );
+
+  double get _remainingOffroadMiles =>
+      (_offroadDistanceMiles * (1 - _offroadProgress)).clamp(
+        0,
+        _offroadDistanceMiles,
+      );
+
+  double get _remainingWalkingMiles =>
+      (_walkingDistanceBaseMiles * (1 - _walkingProgress)).clamp(
+        0,
+        _walkingDistanceBaseMiles,
+      );
+
+  bool get _canMarkPatientReached => (_remainingWalkingMiles * 1609.344) <= 0.5;
+
+  double get _walkingDistanceBaseMiles {
+    if (_walkingDistanceMiles > 0) {
+      return _walkingDistanceMiles;
+    }
+
+    if (_profile.routeSegments.length >= 3) {
+      final walkingText = _profile.routeSegments[2].distance;
+      final parsedMeters = _parseDistanceMeters(walkingText);
+      if (parsedMeters > 0) {
+        return parsedMeters / 1609.344;
+      }
+    }
+
+    return 340 / 1609.344;
+  }
+
+  double _parseDistanceMeters(String input) {
+    final match = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(input);
+    if (match == null) {
+      return 0;
+    }
+
+    final value = double.tryParse(match.group(1)!);
+    if (value == null || value <= 0) {
+      return 0;
+    }
+
+    final lower = input.toLowerCase();
+    if (lower.contains('km')) {
+      return value * 1000;
+    }
+    if (lower.contains('mi') || lower.contains('mile')) {
+      return value * 1609.344;
+    }
+    if (lower.contains('m')) {
+      return value;
+    }
+    return 0;
   }
 
   @override
@@ -706,6 +940,12 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
                       onPatientReached: _markPatientReached,
                       pavedSpeedOverride: _pavedSpeedOverride,
                       offroadSpeedOverride: _offroadSpeedOverride,
+                      pavedRoadEta: _livePavedRoadEtaLabel,
+                      pavedRouteProgress: _livePavedRouteProgressLabel,
+                      offroadRoadEta: _liveOffroadRoadEtaLabel,
+                      offroadRouteProgress: _liveOffroadRouteProgressLabel,
+                      walkingDistanceToPatient: _liveWalkingDistanceLabel,
+                      walkingCanMarkReached: _canMarkPatientReached,
                     ),
                   ),
                 ),
@@ -725,6 +965,8 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
                   child: CurrentDispatchOverlay(
                     profile: _profile,
                     coordinatesLabel: _coordinatesLabel,
+                    totalResponseTime: _routeTotalEtaLabel,
+                    totalDistance: _routeTotalDistanceLabel,
                     onClose: _closeCurrentDispatch,
                   ),
                 ),
