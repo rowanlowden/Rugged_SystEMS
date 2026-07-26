@@ -128,7 +128,7 @@ const DemoIncidentProfile defaultDemoProfile = DemoIncidentProfile(
     ),
     RouteSegmentDemo(
       name: 'Walking (Corn)',
-      distance: '340 ft',
+      distance: '340 m',
       eta: '1.5 mins',
       color: Color(0xFFE53935),
     ),
@@ -191,7 +191,7 @@ const DemoIncidentProfile rlowdenDemoProfile = DemoIncidentProfile(
     ),
     RouteSegmentDemo(
       name: 'Walking (Corn)',
-      distance: '340 ft',
+      distance: '340 m',
       eta: '1.5 mins',
       color: Color(0xFFE53935),
     ),
@@ -254,7 +254,7 @@ const DemoIncidentProfile joshDemoProfile = DemoIncidentProfile(
     ),
     RouteSegmentDemo(
       name: 'Foot Trail',
-      distance: '0.45 mi',
+      distance: '724 m',
       eta: '3.0 mins',
       color: Color(0xFFE53935),
     ),

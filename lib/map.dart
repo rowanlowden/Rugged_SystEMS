@@ -15,6 +15,7 @@ import 'widgets/navigation_phase_hud.dart';
 import 'widgets/navigation_status_panel.dart';
 
 const offlineMapAssetDirectory = 'assets/offline/';
+const _fixedCoordinatesLabel = '43.599812 N, -90.350285 W';
 
 class OfflineNavigationApp extends StatelessWidget {
   const OfflineNavigationApp({super.key});
@@ -60,7 +61,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   void initState() {
     super.initState();
     _profile = demoProfileForUsername(widget.username);
-    _coordinatesLabel = _profile.stagingCoordinates;
+    _coordinatesLabel = _fixedCoordinatesLabel;
     _loadOfflineMap();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showDispatchCallNotification();
@@ -241,7 +242,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     }
 
     setState(() {
-      _coordinatesLabel = _profile.incidentCoordinates;
+      _coordinatesLabel = _fixedCoordinatesLabel;
       _status = 'Dispatch updated coordinates';
     });
   }

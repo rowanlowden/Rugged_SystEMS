@@ -24,6 +24,7 @@ const offlineMapAssetDirectory = 'assets/offline/';
 const offlineMapAssetName = 'thisshouldwork.mmpk';
 const _onRoadStartAddress = '7774 COUNTY ROAD P, WESTBY, WI 54667';
 const _onRoadDestinationAddress = '7880 COUNTY ROAD P, WESTBY, WI 54667';
+const _fixedCoordinatesLabel = '43.599812 N, -90.350285 W';
 
 class OfflineNavigationApp extends StatelessWidget {
   const OfflineNavigationApp({super.key});
@@ -75,7 +76,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   void initState() {
     super.initState();
     _profile = demoProfileForUsername(widget.username);
-    _coordinatesLabel = _profile.stagingCoordinates;
+    _coordinatesLabel = _fixedCoordinatesLabel;
     _offroadRoutePlotter = OffroadRoutePlotter(_mapViewController);
     _onRoadRoutePlotter = OnRoadRoutePlotter(_mapViewController);
     _locationSpoofer = PathLocationSpoofer(
@@ -238,10 +239,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
             onRoadDestination: onRoadRoute.destination,
             maxDistanceMeters: 250,
           );
-      final routeTarget = offroadRoute.vertices.isNotEmpty
-          ? offroadRoute.vertices.last
-          : onRoadRoute.destination;
-      final routeCoordinatesLabel = _formatCoordinates(routeTarget);
       if (!mounted) return false;
 
       await _offroadRoutePlotter.displayRoute(offroadRoute, zoom: false);
@@ -253,7 +250,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
         _offroadRoute = offroadRoute;
         _busy = false;
         _serviceFault = false;
-        _coordinatesLabel = routeCoordinatesLabel;
+        _coordinatesLabel = _fixedCoordinatesLabel;
         _status =
             'On-road and off-road routes are ready. '
             'Showing the on-road route.';
@@ -272,32 +269,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       _showMessage(message);
     }
     return false;
-  }
-
-  String _formatCoordinates(ArcGISPoint point) {
-    final geographicPoint = _projectToWgs84(point);
-    final latitude = geographicPoint.y;
-    final longitude = geographicPoint.x;
-    final latitudeHemisphere = latitude >= 0 ? 'N' : 'S';
-    final longitudeHemisphere = longitude >= 0 ? 'E' : 'W';
-
-    return '$latitudeHemisphere ${latitude.abs().toStringAsFixed(4)}, '
-        '$longitudeHemisphere ${longitude.abs().toStringAsFixed(4)}';
-  }
-
-  ArcGISPoint _projectToWgs84(ArcGISPoint point) {
-    if (point.spatialReference?.wkid == 4326) {
-      return point;
-    }
-
-    final projected = GeometryEngine.project(
-      point,
-      outputSpatialReference: SpatialReference(wkid: 4326),
-    );
-    if (projected is! ArcGISPoint) {
-      throw StateError('Could not project route coordinates to WKID 4326.');
-    }
-    return projected;
   }
 
   void _setStatus(String status, {required bool busy}) {
@@ -336,7 +307,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     }
 
     setState(() {
-      _coordinatesLabel = _profile.incidentCoordinates;
+      _coordinatesLabel = _fixedCoordinatesLabel;
       _status = 'Dispatch updated coordinates';
     });
   }
