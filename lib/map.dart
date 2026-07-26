@@ -316,43 +316,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     });
   }
 
-  void _setNavigationPhase(NavigationPhase phase) {
-    setState(() {
-      _activePhase = phase;
-      _status = _statusForPhase(phase);
-    });
-  }
-
-  void _goToNextPhase() {
-    final currentPhase = _activePhase;
-    if (currentPhase == null) {
-      return;
-    }
-
-    switch (currentPhase) {
-      case NavigationPhase.paved:
-        _setNavigationPhase(NavigationPhase.offroad);
-        break;
-      case NavigationPhase.offroad:
-        _setNavigationPhase(NavigationPhase.walking);
-        break;
-      case NavigationPhase.walking:
-        _setNavigationPhase(NavigationPhase.walking);
-        break;
-    }
-  }
-
-  String _statusForPhase(NavigationPhase phase) {
-    switch (phase) {
-      case NavigationPhase.paved:
-        return 'Road navigation active';
-      case NavigationPhase.offroad:
-        return 'Transitioning to offroad segment';
-      case NavigationPhase.walking:
-        return 'Walking segment active';
-    }
-  }
-
   void _markPatientReached() {
     setState(() {
       _hospitalNavigationMode = true;
@@ -436,8 +399,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
                   offroadAdvisoryDetails: _profile.offroadAdvisoryDetails,
                   walkingAdvisoryTitle: _profile.walkingAdvisoryTitle,
                   walkingAdvisoryDetails: _profile.walkingAdvisoryDetails,
-                  onPhaseSelected: _setNavigationPhase,
-                  onNextPhase: _goToNextPhase,
                 ),
               ),
             ),

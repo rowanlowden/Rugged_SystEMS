@@ -14,8 +14,6 @@ class NavigationPhaseHud extends StatelessWidget {
     required this.offroadAdvisoryDetails,
     required this.walkingAdvisoryTitle,
     required this.walkingAdvisoryDetails,
-    required this.onPhaseSelected,
-    required this.onNextPhase,
   });
 
   final NavigationPhase phase;
@@ -26,8 +24,6 @@ class NavigationPhaseHud extends StatelessWidget {
   final String offroadAdvisoryDetails;
   final String walkingAdvisoryTitle;
   final String walkingAdvisoryDetails;
-  final ValueChanged<NavigationPhase> onPhaseSelected;
-  final VoidCallback onNextPhase;
 
   @override
   Widget build(BuildContext context) {
@@ -49,54 +45,26 @@ class NavigationPhaseHud extends StatelessWidget {
                   _SegmentBar(
                     active: phase == NavigationPhase.paved,
                     color: const Color(0xFF1E3B1B),
-                    onTap: () => onPhaseSelected(NavigationPhase.paved),
                   ),
                   const SizedBox(width: 6),
                   _SegmentBar(
                     active: phase == NavigationPhase.offroad,
                     color: const Color(0xFFD4A017),
-                    onTap: () => onPhaseSelected(NavigationPhase.offroad),
                   ),
                   const SizedBox(width: 6),
                   _SegmentBar(
                     active: phase == NavigationPhase.walking,
                     color: const Color(0xFFE53935),
-                    onTap: () => onPhaseSelected(NavigationPhase.walking),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
               Row(
                 children: [
-                  _SegmentLabel(
-                    text: _labelFor(routeSegments, 0, 'PAVED'),
-                    onTap: () => onPhaseSelected(NavigationPhase.paved),
-                  ),
-                  _SegmentLabel(
-                    text: _labelFor(routeSegments, 1, 'OFFROAD'),
-                    onTap: () => onPhaseSelected(NavigationPhase.offroad),
-                  ),
-                  _SegmentLabel(
-                    text: _labelFor(routeSegments, 2, 'WALK'),
-                    onTap: () => onPhaseSelected(NavigationPhase.walking),
-                  ),
+                  _SegmentLabel(text: _labelFor(routeSegments, 0, 'PAVED')),
+                  _SegmentLabel(text: _labelFor(routeSegments, 1, 'OFFROAD')),
+                  _SegmentLabel(text: _labelFor(routeSegments, 2, 'WALK')),
                 ],
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: OutlinedButton.icon(
-                  onPressed: onNextPhase,
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFF3A4250)),
-                    foregroundColor: const Color(0xFFD0D8E4),
-                    minimumSize: const Size(0, 34),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  icon: const Icon(Icons.skip_next, size: 18),
-                  label: const Text('Next Phase'),
-                ),
               ),
             ],
           ),
@@ -130,27 +98,19 @@ class NavigationPhaseHud extends StatelessWidget {
 }
 
 class _SegmentBar extends StatelessWidget {
-  const _SegmentBar({
-    required this.active,
-    required this.color,
-    required this.onTap,
-  });
+  const _SegmentBar({required this.active, required this.color});
 
   final bool active;
   final Color color;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          height: 8,
-          decoration: BoxDecoration(
-            color: active ? color : const Color(0xFF3A4250),
-            borderRadius: BorderRadius.circular(999),
-          ),
+      child: Container(
+        height: 8,
+        decoration: BoxDecoration(
+          color: active ? color : const Color(0xFF3A4250),
+          borderRadius: BorderRadius.circular(999),
         ),
       ),
     );
@@ -158,24 +118,20 @@ class _SegmentBar extends StatelessWidget {
 }
 
 class _SegmentLabel extends StatelessWidget {
-  const _SegmentLabel({required this.text, required this.onTap});
+  const _SegmentLabel({required this.text});
 
   final String text;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.labelMedium?.copyWith(
-            color: const Color(0xFFAAB4C1),
-            fontFamily: 'monospace',
-            letterSpacing: 0.2,
-          ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: const Color(0xFFAAB4C1),
+          fontFamily: 'monospace',
+          letterSpacing: 0.2,
         ),
       ),
     );

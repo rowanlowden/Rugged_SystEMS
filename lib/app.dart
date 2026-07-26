@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import 'offroad_route.dart';
 import 'locationspoof.dart';
+import 'onroad_route.dart';
 import 'plot_offroad_route.dart';
 import 'plot_onroad_route.dart';
 import 'utils/consts.dart';
@@ -22,7 +23,7 @@ import 'widgets/patient_route_sheet.dart';
 import 'widgets/route_summary_bar.dart';
 
 const offlineMapAssetDirectory = 'assets/offline/';
-const offlineMapAssetName = 'map_package.mmpk';
+const offlineMapAssetName = 'thisshouldwork.mmpk';
 const _onRoadStartAddress = '7774 COUNTY ROAD P, WESTBY, WI 54667';
 const _onRoadDestinationAddress = '7880 COUNTY ROAD P, WESTBY, WI 54667';
 
@@ -53,6 +54,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   late final DemoIncidentProfile _profile;
 
   bool _mapViewReady = false;
+  bool _offlineMapLoadStarted = false;
   bool _mapLoaded = false;
   bool _locationEnabled = false;
   bool _busy = true;
@@ -62,6 +64,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   bool _currentDispatchOpen = false;
   bool _hospitalNavigationMode = false;
   NavigationPhase? _activePhase;
+  OnRoadRoute? _onRoadRoute;
   LeastCostPathResult? _offroadRoute;
 
   String _status = 'Loading offline map…';
@@ -80,12 +83,15 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     _locationSpoofer = PathLocationSpoofer(
       onFinished: () {
         if (!mounted) return;
-        setState(
-          () => _status = 'Simulated navigation reached the destination.',
-        );
+        if (_activePhase == NavigationPhase.paved) {
+          unawaited(_startOffroadSimulation());
+        } else if (_activePhase == NavigationPhase.offroad) {
+          setState(
+            () => _status = 'Simulated navigation reached the destination.',
+          );
+        }
       },
     );
-    _loadOfflineMap();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showDispatchCallNotification();
     });
@@ -252,17 +258,11 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
 
       await _offroadRoutePlotter.displayRoute(offroadRoute, zoom: false);
       await _onRoadRoutePlotter.displayRoute(onRoadRoute);
-      await _locationSpoofer.start(
-        paths: [onRoadRoute.polyline, offroadRoute.polyline],
-        metersPerSecond: 12,
-        locationDisplay: _mapViewController.locationDisplay,
-      );
-      _mapViewController.locationDisplay.start();
       if (!mounted) return false;
 
       setState(() {
+        _onRoadRoute = onRoadRoute;
         _offroadRoute = offroadRoute;
-        _locationEnabled = true;
         _busy = false;
         _serviceFault = false;
         _status =
@@ -356,6 +356,58 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     }
 
     await _setNavigationPhase(NavigationPhase.paved);
+    await _startPavedSimulation();
+  }
+
+  Future<void> _startPavedSimulation() async {
+    final route = _onRoadRoute;
+    if (!mounted || _activePhase != NavigationPhase.paved || route == null) {
+      return;
+    }
+
+    try {
+      await _locationSpoofer.start(
+        paths: [route.polyline],
+        metersPerSecond: 12,
+        locationDisplay: _mapViewController.locationDisplay,
+      );
+      _mapViewController.locationDisplay.start();
+      if (!mounted) return;
+      setState(() => _locationEnabled = true);
+    } on ArcGISException catch (error) {
+      _setStatus(
+        'Could not start paved simulation: ${error.message}',
+        busy: false,
+      );
+    } catch (error) {
+      _setStatus('Could not start paved simulation: $error', busy: false);
+    }
+  }
+
+  Future<void> _startOffroadSimulation() async {
+    final route = _offroadRoute;
+    if (!mounted || _activePhase != NavigationPhase.paved || route == null) {
+      return;
+    }
+
+    await _setNavigationPhase(NavigationPhase.offroad);
+    if (!mounted || _activePhase != NavigationPhase.offroad) return;
+
+    try {
+      await _locationSpoofer.start(
+        paths: [route.polyline],
+        metersPerSecond: 12,
+        locationDisplay: _mapViewController.locationDisplay,
+      );
+      _mapViewController.locationDisplay.start();
+    } on ArcGISException catch (error) {
+      _setStatus(
+        'Could not start off-road simulation: ${error.message}',
+        busy: false,
+      );
+    } catch (error) {
+      _setStatus('Could not start off-road simulation: $error', busy: false);
+    }
   }
 
   Future<void> _setNavigationPhase(NavigationPhase phase) async {
@@ -378,25 +430,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
           _setStatus('Could not zoom to off-road route: $error', busy: false);
         }
       }
-    }
-  }
-
-  void _goToNextPhase() {
-    final currentPhase = _activePhase;
-    if (currentPhase == null) {
-      return;
-    }
-
-    switch (currentPhase) {
-      case NavigationPhase.paved:
-        _setNavigationPhase(NavigationPhase.offroad);
-        break;
-      case NavigationPhase.offroad:
-        _setNavigationPhase(NavigationPhase.walking);
-        break;
-      case NavigationPhase.walking:
-        _setNavigationPhase(NavigationPhase.walking);
-        break;
     }
   }
 
@@ -475,6 +508,10 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
               _onRoadRoutePlotter.attach();
               _locationSpoofer.attach(_mapViewController);
               setState(() => _mapViewReady = true);
+              if (!_offlineMapLoadStarted) {
+                _offlineMapLoadStarted = true;
+                unawaited(_loadOfflineMap());
+              }
             },
           ),
           if (!_navigationStarted && !_hospitalNavigationMode)
@@ -500,8 +537,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
                   offroadAdvisoryDetails: _profile.offroadAdvisoryDetails,
                   walkingAdvisoryTitle: _profile.walkingAdvisoryTitle,
                   walkingAdvisoryDetails: _profile.walkingAdvisoryDetails,
-                  onPhaseSelected: _setNavigationPhase,
-                  onNextPhase: _goToNextPhase,
                 ),
               ),
             ),

@@ -32,6 +32,7 @@ class PathLocationSpoofer {
   ArcGISMapViewController? _mapViewController;
   bool _attached = false;
   bool _finished = false;
+  int _session = 0;
 
   /// The active source that supplies the spoofed locations, if started.
   SimulatedLocationDataSource? get dataSource => _dataSource;
@@ -71,6 +72,7 @@ class PathLocationSpoofer {
     }
 
     await stop();
+    final session = ++_session;
 
     final tripPath = _joinOrderedPaths(paths);
     final source =
@@ -91,6 +93,7 @@ class PathLocationSpoofer {
     _finished = false;
     marker.geometry = source.locations.first.position;
     _locationSubscription = source.onLocationChanged.listen((location) {
+      if (session != _session) return;
       marker.geometry = location.position;
       if (!_finished &&
           source.currentLocationIndex >= source.locations.length - 1) {
@@ -111,6 +114,7 @@ class PathLocationSpoofer {
 
   /// Stops playback and removes the simulated location listener.
   Future<void> stop() async {
+    _session++;
     await _locationSubscription?.cancel();
     _locationSubscription = null;
 
