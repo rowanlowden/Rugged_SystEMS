@@ -22,7 +22,7 @@ class DispatchCallPanel extends StatelessWidget {
       color: const Color(0xFF101317),
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 22, 14, 20),
+          padding: const EdgeInsets.fromLTRB(14, 36, 14, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -30,11 +30,11 @@ class DispatchCallPanel extends StatelessWidget {
               Center(
                 child: Image.asset(
                   'assets/icons/RS_logo.png',
-                  height: 64,
+                  height: 192,
                   fit: BoxFit.contain,
                 ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 24),
               Align(
                 alignment: Alignment.centerLeft,
                 child: Container(
