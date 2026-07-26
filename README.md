@@ -2,10 +2,6 @@
 
 ![Rugged SystEMS Banner](docs/screenshots/banner.png)
 
-<p align="center">
-  <img src="assets/icons/RS_logo.png" alt="Rugged SystEMS logo" width="140" />
-</p>
-
 Rugged SystEMS is a terrain-aware, offline navigation prototype designed for rural emergency response. It supports a two-stage rescue workflow: drive as close as possible, then continue on foot using terrain-informed routing.
 
 ## Inspiration
@@ -24,29 +20,36 @@ Rugged SystEMS is a terrain-aware, offline navigation prototype designed for rur
 
 ## Screenshots
 
-### Login
-![Login Screen](docs/screenshots/login.png)
-*Operator login entry point for the offline navigation workflow.*
-
-### Incoming Dispatch
-![Incoming Dispatch](docs/screenshots/incomingdispatch.png)
-*Incoming dispatch details before navigation is accepted.*
-
-### Paved Route Navigation
-![Paved Route Navigation](docs/screenshots/pavedroute.png)
-*On-road navigation phase with live ETA and route progress.*
-
-### Walking Route
-![Walking Route](docs/screenshots/walkroute.png)
-*On-foot navigation phase with distance-to-patient tracking.*
-
-### Patient Reached
-![Patient Reached](docs/screenshots/patientreached.png)
-*Patient arrival state and responder confirmation action.*
-
-### Patient Secured
-![Patient Secured](docs/screenshots/patientsecured.png)
-*Post-arrival handoff state before hospital routing.*
+<table>
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/login.png" alt="Login Screen" width="260" /><br />
+      <sub><b>Login</b></sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/incomingdispatch.png" alt="Incoming Dispatch" width="260" /><br />
+      <sub><b>Incoming Dispatch</b></sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/pavedroute.png" alt="Paved Route Navigation" width="260" /><br />
+      <sub><b>Paved Route</b></sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/walkroute.png" alt="Walking Route" width="260" /><br />
+      <sub><b>Walking Route</b></sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/patientreached.png" alt="Patient Reached" width="260" /><br />
+      <sub><b>Patient Reached</b></sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/patientsecured.png" alt="Patient Secured" width="260" /><br />
+      <sub><b>Patient Secured</b></sub>
+    </td>
+  </tr>
+</table>
 
 ## How We Built It
 
