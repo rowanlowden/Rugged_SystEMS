@@ -135,6 +135,5 @@ flutter run
 - [Flutter Documentation](https://docs.flutter.dev/)
 - [ArcGIS Maps SDK for Flutter](https://developers.arcgis.com/flutter/)
 
-## Try It Out
 
-- [GitHub Repository](https://github.com/rowanlowden/Rugged_SystEMS)
+
