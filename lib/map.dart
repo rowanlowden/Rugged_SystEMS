@@ -13,8 +13,6 @@ import 'widgets/map_header_bar.dart';
 import 'widgets/navigation_phase.dart';
 import 'widgets/navigation_phase_hud.dart';
 import 'widgets/navigation_status_panel.dart';
-import 'widgets/patient_route_sheet.dart';
-import 'widgets/route_summary_bar.dart';
 
 const offlineMapAssetDirectory = 'assets/offline/';
 
@@ -192,20 +190,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     }
   }
 
-  void _recenter() {
-    if (!_locationEnabled) {
-      _showMessage('Enable location before recentering.');
-      return;
-    }
-
-    _mapViewController.locationDisplay.autoPanMode =
-        LocationDisplayAutoPanMode.recenter;
-
-    setState(() {
-      _status = 'Following current location';
-    });
-  }
-
   void _createRoute() {
     // Boilerplate extension point:
     //
@@ -267,6 +251,8 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       _dispatchCallAccepted = true;
       _status = 'Dispatch accepted. Navigate to patient.';
     });
+
+    _startRoadNavigation();
   }
 
   void _openCurrentDispatch() {
@@ -376,16 +362,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
               setState(() => _mapViewReady = true);
             },
           ),
-          if (!_navigationStarted && !_hospitalNavigationMode)
-            SafeArea(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: RouteSummaryBar(
-                  totalResponseTime: _profile.totalResponseTime,
-                  totalDistance: _profile.totalDistance,
-                ),
-              ),
-            ),
           if (_navigationStarted && !_hospitalNavigationMode)
             SafeArea(
               child: Align(
@@ -419,21 +395,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
                 ),
               ),
             ),
-          if (!_navigationStarted && !_hospitalNavigationMode)
-            DraggableScrollableSheet(
-              initialChildSize: 0.32,
-              minChildSize: 0.18,
-              maxChildSize: 0.52,
-              snap: true,
-              snapSizes: const [0.32, 0.52],
-              builder: (context, scrollController) {
-                return PatientRouteSheet(
-                  scrollController: scrollController,
-                  onStartNavigation: _startRoadNavigation,
-                  routeSegments: _profile.routeSegments,
-                );
-              },
-            ),
           if (_navigationStarted && !_hospitalNavigationMode)
             Align(
               alignment: Alignment.bottomCenter,
@@ -464,6 +425,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
                 top: false,
                 child: DispatchCallPanel(
                   profile: _profile,
+                  coordinatesLabel: _coordinatesLabel,
                   onAcceptNavigate: _acceptDispatchCall,
                 ),
               ),
@@ -472,6 +434,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
             Positioned.fill(
               child: CurrentDispatchOverlay(
                 profile: _profile,
+                coordinatesLabel: _coordinatesLabel,
                 onClose: _closeCurrentDispatch,
               ),
             ),
@@ -481,13 +444,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          FloatingActionButton.small(
-            heroTag: 'recenter',
-            tooltip: 'Recenter',
-            onPressed: _mapLoaded ? _recenter : null,
-            child: const Icon(Icons.gps_fixed),
-          ),
-          const SizedBox(height: 12),
           FloatingActionButton.extended(
             heroTag: 'route',
             onPressed: _mapLoaded ? _createRoute : null,
