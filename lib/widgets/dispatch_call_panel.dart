@@ -28,7 +28,7 @@ class DispatchCallPanel extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
               decoration: BoxDecoration(
-                color: const Color(0xFFFF2222),
+                color: const Color(0xFFE53935),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: Text(
@@ -64,7 +64,7 @@ class DispatchCallPanel extends StatelessWidget {
                 Text(
                   profile.reportedEvent,
                   style: theme.textTheme.headlineSmall?.copyWith(
-                    color: const Color(0xFFFF2222),
+                    color: const Color(0xFFE53935),
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -203,7 +203,7 @@ class _MetricTile extends StatelessWidget {
           value,
           style: theme.textTheme.titleLarge?.copyWith(
             color: emphasize
-                ? const Color(0xFF1E3B1B)
+                ? const Color(0xFFC8CCCC)
                 : const Color(0xFFC8CCCC),
             fontWeight: FontWeight.w700,
           ),

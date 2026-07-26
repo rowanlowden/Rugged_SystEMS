@@ -85,7 +85,7 @@ class _PavedStatus extends StatelessWidget {
               Text(
                 profile.pavedCurrentSpeed,
                 style: theme.textTheme.displayMedium?.copyWith(
-                  color: const Color(0xFF1E3B1B),
+                  color: const Color(0xFFC8CCCC),
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -93,7 +93,7 @@ class _PavedStatus extends StatelessWidget {
               Text(
                 'MPH',
                 style: theme.textTheme.headlineSmall?.copyWith(
-                  color: const Color(0xFFDCE3EC),
+                  color: const Color(0xFFC8CCCC),
                 ),
               ),
               const Spacer(),
@@ -226,7 +226,7 @@ class _WalkingStatus extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFFF2222),
+                  color: const Color(0xFFE53935),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
@@ -247,7 +247,7 @@ class _WalkingStatus extends StatelessWidget {
                   theme,
                   'HEART RATE',
                   profile.walkingHeartRate,
-                  const Color(0xFFFF2222),
+                  const Color(0xFFE53935),
                 ),
               ),
               const SizedBox(width: 8),
@@ -274,7 +274,7 @@ class _WalkingStatus extends StatelessWidget {
           FilledButton(
             onPressed: onPatientReached,
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFFF2222),
+              backgroundColor: const Color(0xFFE53935),
               foregroundColor: const Color(0xFFC8CCCC),
               minimumSize: const Size.fromHeight(50),
               shape: RoundedRectangleBorder(

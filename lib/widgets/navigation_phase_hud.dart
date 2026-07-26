@@ -60,7 +60,7 @@ class NavigationPhaseHud extends StatelessWidget {
                   const SizedBox(width: 6),
                   _SegmentBar(
                     active: phase == NavigationPhase.walking,
-                    color: const Color(0xFFFF2222),
+                    color: const Color(0xFFE53935),
                     onTap: () => onPhaseSelected(NavigationPhase.walking),
                   ),
                 ],
@@ -263,7 +263,7 @@ class _PavedInstruction extends StatelessWidget {
                 Text(
                   distance,
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: const Color(0xFF1E3B1B),
+                    color: const Color(0xFFC8CCCC),
                     fontFamily: 'monospace',
                     fontWeight: FontWeight.w700,
                   ),
@@ -338,7 +338,7 @@ class _WalkingAdvisory extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xE012151A),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFFF2222)),
+        border: Border.all(color: const Color(0xFFE53935)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -346,14 +346,14 @@ class _WalkingAdvisory extends StatelessWidget {
           Text(
             title,
             style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              color: const Color(0xFFFF2222),
+              color: const Color(0xFFE53935),
               fontWeight: FontWeight.w800,
             ),
           ),
           Text(
             details,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: const Color(0xFFFF2222),
+              color: const Color(0xFFE53935),
               fontFamily: 'monospace',
             ),
           ),
