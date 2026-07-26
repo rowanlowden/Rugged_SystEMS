@@ -1,7 +1,10 @@
 import 'package:arcgis_maps/arcgis_maps.dart';
-import 'package:flutter/material.dart' show Colors;
+import 'package:flutter/material.dart' show Color;
 
 import 'offroad_route.dart';
+
+const _offroadDestinationLatitude = 43.599812;
+const _offroadDestinationLongitude = -90.350285;
 
 /// Displays [LeastCostPathResult.polyline] values on an [ArcGISMapView].
 ///
@@ -31,16 +34,22 @@ class OffroadRoutePlotter {
   /// Solves the configured off-road route without changing the map display.
   Future<LeastCostPathResult> solvePreset() => solvePresetLeastCostPath();
 
-  /// Starts at [onRoadDestination] and selects a random connected off-road
-  /// destination no more than [maxDistanceMeters] away.
+  /// Starts at [onRoadDestination] and routes to the fixed off-road
+  /// destination in WGS84 coordinates.
   Future<LeastCostPathResult> solveFromOnRoadDestination({
     required ArcGISPoint onRoadDestination,
-    double maxDistanceMeters = 250,
   }) {
     final start = _projectToOffroadGrid(onRoadDestination);
-    return solveLeastCostPathFromOnRoadDestination(
+    final destination = _projectToOffroadGrid(
+      ArcGISPoint(
+        x: _offroadDestinationLongitude,
+        y: _offroadDestinationLatitude,
+        spatialReference: SpatialReference(wkid: 4326),
+      ),
+    );
+    return solveLeastCostPathToFixedDestination(
       start: start,
-      maxDistanceMeters: maxDistanceMeters,
+      destination: destination,
     );
   }
 
@@ -72,9 +81,20 @@ class OffroadRoutePlotter {
       ..add(
         Graphic(
           geometry: route.polyline,
-          symbol: SimpleLineSymbol(color: Colors.blue, width: 5),
+          symbol: SimpleLineSymbol(color: Color(0xFFD4A017), width: 5),
         ),
       );
+    final alternateRoute = route.polylineFromFirstWeightAbove(
+      offroadWalkingWeightThreshold,
+    );
+    if (alternateRoute != null) {
+      _routeOverlay.graphics.add(
+        Graphic(
+          geometry: alternateRoute,
+          symbol: SimpleLineSymbol(color: Color(0xFFE53935), width: 8),
+        ),
+      );
+    }
     if (zoom) {
       final completed = await _mapViewController.setViewpointGeometry(
         route.polyline,

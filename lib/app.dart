@@ -23,8 +23,8 @@ import 'widgets/navigation_status_panel.dart';
 
 const offlineMapAssetDirectory = 'assets/offline/';
 const offlineMapAssetName = 'thisshouldwork.mmpk';
-const _onRoadStartAddress = '7774 COUNTY ROAD P, WESTBY, WI 54667';
-const _onRoadDestinationAddress = '7880 COUNTY ROAD P, WESTBY, WI 54667';
+const _onRoadStartAddress = '1501 WATER AVE, HILLSBORO, WI 54634';
+const _onRoadDestinationAddress = '3610 STATE HIGHWAY 80, HILLSBORO, WI 54634';
 const _fixedCoordinatesLabel = '43.599812 N, -90.350285 W';
 
 class OfflineNavigationApp extends StatelessWidget {
@@ -67,6 +67,9 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   NavigationPhase? _activePhase;
   OnRoadRoute? _onRoadRoute;
   LeastCostPathResult? _offroadRoute;
+  Future<void>? _offroadSolveFuture;
+  Object? _offroadSolveError;
+  bool _offroadTransitionRequested = false;
   final math.Random _random = math.Random();
   Timer? _speedSimulationTimer;
   String? _pavedSpeedOverride;
@@ -85,18 +88,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     _coordinatesLabel = _fixedCoordinatesLabel;
     _offroadRoutePlotter = OffroadRoutePlotter(_mapViewController);
     _onRoadRoutePlotter = OnRoadRoutePlotter(_mapViewController);
-    _locationSpoofer = PathLocationSpoofer(
-      onFinished: () {
-        if (!mounted) return;
-        if (_activePhase == NavigationPhase.paved) {
-          unawaited(_startOffroadSimulation());
-        } else if (_activePhase == NavigationPhase.offroad) {
-          setState(
-            () => _status = 'Simulated navigation reached the destination.',
-          );
-        }
-      },
-    );
+    _locationSpoofer = PathLocationSpoofer();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showDispatchCallNotification();
     });
@@ -233,7 +225,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
 
     setState(() {
       _isGeneratingRoute = true;
-      _status = 'Generating on-road and off-road routes…';
+      _status = 'Generating on-road route…';
       _busy = true;
     });
     try {
@@ -244,28 +236,26 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
         startAddress: _onRoadStartAddress,
         destinationAddress: _onRoadDestinationAddress,
       );
-      final offroadRoute = await _offroadRoutePlotter
-          .solveFromOnRoadDestination(
-            onRoadDestination: onRoadRoute.destination,
-            maxDistanceMeters: 250,
-          );
       if (!mounted) return false;
 
-      await _offroadRoutePlotter.displayRoute(offroadRoute, zoom: false);
       await _onRoadRoutePlotter.displayRoute(onRoadRoute);
       if (!mounted) return false;
 
       setState(() {
         _onRoadRoute = onRoadRoute;
-        _offroadRoute = offroadRoute;
+        _offroadRoute = null;
+        _offroadSolveError = null;
+        _offroadTransitionRequested = false;
         _busy = false;
         _serviceFault = false;
         _coordinatesLabel = _fixedCoordinatesLabel;
-        _status =
-            'On-road and off-road routes are ready. '
-            'Showing the on-road route.';
+        _status = 'On-road route ready. Preparing off-road route…';
       });
-      _showMessage('Both routes are ready. Showing the on-road route.');
+      _offroadSolveFuture = _solveOffroadInBackground(
+        onRoadDestination: onRoadRoute.destination,
+      );
+      unawaited(_offroadSolveFuture!);
+      _showMessage('On-road route ready. Preparing off-road route.');
       return true;
     } on ArcGISException catch (error) {
       final message = 'Could not generate routes: ${error.message}';
@@ -283,6 +273,33 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       }
     }
     return false;
+  }
+
+  Future<void> _solveOffroadInBackground({
+    required ArcGISPoint onRoadDestination,
+  }) async {
+    try {
+      final route = await _offroadRoutePlotter.solveFromOnRoadDestination(
+        onRoadDestination: onRoadDestination,
+      );
+      if (!mounted) return;
+
+      setState(() {
+        _offroadRoute = route;
+        _offroadSolveError = null;
+        if (_activePhase == NavigationPhase.paved) {
+          _status = 'Road navigation active. Off-road route ready.';
+        }
+      });
+    } on ArcGISException catch (error) {
+      debugPrint('Could not prepare off-road route: ${error.message}');
+      if (!mounted) return;
+      setState(() => _offroadSolveError = error);
+    } catch (error, stackTrace) {
+      debugPrint('Could not prepare off-road route: $error\n$stackTrace');
+      if (!mounted) return;
+      setState(() => _offroadSolveError = error);
+    }
   }
 
   void _setStatus(String status, {required bool busy}) {
@@ -370,8 +387,9 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     try {
       await _locationSpoofer.start(
         paths: [route.polyline],
-        metersPerSecond: 12,
+        metersPerSecond: 200,
         locationDisplay: _mapViewController.locationDisplay,
+        onFinished: () => unawaited(_startOffroadSimulation()),
       );
       _mapViewController.locationDisplay.start();
       if (!mounted) return;
@@ -387,19 +405,58 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   }
 
   Future<void> _startOffroadSimulation() async {
+    if (!mounted ||
+        _activePhase != NavigationPhase.paved ||
+        _offroadTransitionRequested) {
+      return;
+    }
+    _offroadTransitionRequested = true;
+
+    if (_offroadRoute == null) {
+      final solveFuture = _offroadSolveFuture;
+      if (solveFuture != null) {
+        setState(
+          () => _status = 'Arrived at road handoff; preparing off-road route…',
+        );
+        await solveFuture;
+      }
+    }
+
+    if (!mounted || _activePhase != NavigationPhase.paved) {
+      _offroadTransitionRequested = false;
+      return;
+    }
     final route = _offroadRoute;
-    if (!mounted || _activePhase != NavigationPhase.paved || route == null) {
+    if (route == null) {
+      _offroadTransitionRequested = false;
+      final error = _offroadSolveError;
+      final message = error == null
+          ? 'Off-road route is unavailable; simulated navigation stopped at '
+                'the road handoff.'
+          : 'Off-road route could not be prepared; simulated navigation '
+                'stopped at the road handoff.\n$error';
+      _setStatus(message, busy: false);
+      _showMessage('Off-road route unavailable at the road handoff.');
       return;
     }
 
+    final split = route.splitAtFirstWeightAbove(offroadWalkingWeightThreshold);
     await _setNavigationPhase(NavigationPhase.offroad);
     if (!mounted || _activePhase != NavigationPhase.offroad) return;
 
+    if (split?.beforeAlternate == null && split != null) {
+      await _startWalkingSimulation(split.alternate);
+      return;
+    }
+
     try {
       await _locationSpoofer.start(
-        paths: [route.polyline],
+        paths: [split?.beforeAlternate ?? route.polyline],
         metersPerSecond: 12,
         locationDisplay: _mapViewController.locationDisplay,
+        onFinished: split == null
+            ? _markSimulatedNavigationComplete
+            : () => unawaited(_startWalkingSimulation(split.alternate)),
       );
       _mapViewController.locationDisplay.start();
     } on ArcGISException catch (error) {
@@ -410,6 +467,35 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     } catch (error) {
       _setStatus('Could not start off-road simulation: $error', busy: false);
     }
+  }
+
+  Future<void> _startWalkingSimulation(Polyline alternateRoute) async {
+    if (!mounted || _activePhase != NavigationPhase.offroad) return;
+
+    await _setNavigationPhase(NavigationPhase.walking);
+    if (!mounted || _activePhase != NavigationPhase.walking) return;
+
+    try {
+      await _locationSpoofer.start(
+        paths: [alternateRoute],
+        metersPerSecond: 12,
+        locationDisplay: _mapViewController.locationDisplay,
+        onFinished: _markSimulatedNavigationComplete,
+      );
+      _mapViewController.locationDisplay.start();
+    } on ArcGISException catch (error) {
+      _setStatus(
+        'Could not start walking simulation: ${error.message}',
+        busy: false,
+      );
+    } catch (error) {
+      _setStatus('Could not start walking simulation: $error', busy: false);
+    }
+  }
+
+  void _markSimulatedNavigationComplete() {
+    if (!mounted) return;
+    setState(() => _status = 'Simulated navigation reached the destination.');
   }
 
   Future<void> _setNavigationPhase(NavigationPhase phase) async {

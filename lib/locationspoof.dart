@@ -55,6 +55,7 @@ class PathLocationSpoofer {
     LocationDisplay? locationDisplay,
     LocationDisplayAutoPanMode autoPanMode =
         LocationDisplayAutoPanMode.recenter,
+    void Function()? onFinished,
   }) async {
     if (paths.isEmpty) {
       throw ArgumentError.value(
@@ -92,15 +93,25 @@ class PathLocationSpoofer {
     _dataSource = source;
     _finished = false;
     marker.geometry = source.locations.first.position;
-    _locationSubscription = source.onLocationChanged.listen((location) {
+    final completionCallback = onFinished ?? this.onFinished;
+    late final StreamSubscription<ArcGISLocation> subscription;
+    subscription = source.onLocationChanged.listen((location) {
       if (session != _session) return;
       marker.geometry = location.position;
       if (!_finished &&
           source.currentLocationIndex >= source.locations.length - 1) {
         _finished = true;
-        onFinished?.call();
+        unawaited(
+          _finishPlayback(
+            source: source,
+            subscription: subscription,
+            session: session,
+            onFinished: completionCallback,
+          ),
+        );
       }
     });
+    _locationSubscription = subscription;
 
     if (locationDisplay != null) {
       locationDisplay
@@ -110,6 +121,27 @@ class PathLocationSpoofer {
 
     await source.start();
     return source;
+  }
+
+  Future<void> _finishPlayback({
+    required SimulatedLocationDataSource source,
+    required StreamSubscription<ArcGISLocation> subscription,
+    required int session,
+    required void Function()? onFinished,
+  }) async {
+    await subscription.cancel();
+    if (session != _session) return;
+
+    await source.stop();
+    if (session != _session) return;
+
+    if (identical(_locationSubscription, subscription)) {
+      _locationSubscription = null;
+    }
+    if (identical(_dataSource, source)) {
+      _dataSource = null;
+    }
+    onFinished?.call();
   }
 
   /// Stops playback and removes the simulated location listener.

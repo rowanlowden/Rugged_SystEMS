@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show FlutterError, debugPrint;
 import 'package:flutter/services.dart';
 
 const offroadGridWkid = 3071;
+const offroadWalkingWeightThreshold = 3.0;
 
 /// Solves the build-time configured least-cost path from one local Esri ASCII
 /// cost grid. No display raster, map view, network service, or user input is
@@ -46,11 +47,10 @@ Future<LeastCostPathResult> solvePresetLeastCostPath() async {
   return result;
 }
 
-/// Solves from an on-road destination to a random connected off-road point no
-/// more than [maxDistanceMeters] away.
-Future<LeastCostPathResult> solveLeastCostPathFromOnRoadDestination({
+/// Solves from an on-road destination to a fixed off-road destination.
+Future<LeastCostPathResult> solveLeastCostPathToFixedDestination({
   required ArcGISPoint start,
-  double maxDistanceMeters = 250,
+  required ArcGISPoint destination,
 }) async {
   const gridPath = String.fromEnvironment(
     'OFFLINE_COST_GRID_PATH',
@@ -60,9 +60,9 @@ Future<LeastCostPathResult> solveLeastCostPathFromOnRoadDestination({
   return OfflineLeastCostPathSolver(
     costGridPath: localGridPath,
     spatialReferenceWkid: offroadGridWkid,
-  ).solveFromStartWithRandomDestination(
+  ).solve(
     start: start,
-    maxDistanceMeters: maxDistanceMeters,
+    destination: destination,
   );
 }
 
@@ -176,31 +176,53 @@ class OfflineLeastCostPathSolver {
     final cells = List<LeastCostPathCell>.unmodifiable(
       solved.cells.map((cell) => LeastCostPathCell(cell.row, cell.column)),
     );
-    final vertices = List<ArcGISPoint>.unmodifiable(
-      _removeCollinearCells(solved.cells).map(
-        (cell) => _cellCenter(
-          cell: cell,
-          rows: solved.rows,
-          xMin: solved.xMin,
-          yMin: solved.yMin,
-          cellSize: solved.cellSize,
-          spatialReference: spatialReference,
-        ),
+    final steps = List<LeastCostPathStep>.unmodifiable(
+      List.generate(solved.cells.length, (index) {
+        final cell = solved.cells[index];
+        return LeastCostPathStep(
+          cell: cells[index],
+          center: _cellCenter(
+            cell: cell,
+            rows: solved.rows,
+            xMin: solved.xMin,
+            yMin: solved.yMin,
+            cellSize: solved.cellSize,
+            spatialReference: spatialReference,
+          ),
+          weight: solved.weights[index],
+        );
+      }),
+    );
+    final gridVertices = _removeCollinearCells(solved.cells).map(
+      (cell) => _cellCenter(
+        cell: cell,
+        rows: solved.rows,
+        xMin: solved.xMin,
+        yMin: solved.yMin,
+        cellSize: solved.cellSize,
+        spatialReference: spatialReference,
       ),
     );
+    final vertices = List<ArcGISPoint>.unmodifiable([
+      ArcGISPoint(x: startX, y: startY, spatialReference: spatialReference),
+      ...gridVertices,
+      ArcGISPoint(
+        x: destinationX,
+        y: destinationY,
+        spatialReference: spatialReference,
+      ),
+    ]);
 
     final builder = PolylineBuilder(spatialReference: spatialReference);
     for (final vertex in vertices) {
       builder.addPoint(vertex);
     }
-    // A polyline requires a segment. Duplicate a sole cell center when both
-    // preset coordinates resolve to the same grid cell.
-    if (vertices.length == 1) builder.addPoint(vertices.single);
 
     return LeastCostPathResult(
       polyline: builder.toGeometry() as Polyline,
       vertices: vertices,
       cells: cells,
+      steps: steps,
       accumulatedCost: solved.cost,
     );
   }
@@ -293,20 +315,96 @@ class LeastCostPathResult {
     required this.polyline,
     required this.vertices,
     required this.cells,
+    required this.steps,
     required this.accumulatedCost,
   });
 
   /// ArcGIS geometry ready to assign to a [Graphic] or feature.
   final Polyline polyline;
 
-  /// Simplified cell-center points used to build [polyline].
+  /// Exact solver endpoints plus simplified intermediate cell-center points
+  /// used to build [polyline].
   final List<ArcGISPoint> vertices;
 
   /// Every ASCII-grid cell traversed from start to destination.
   final List<LeastCostPathCell> cells;
 
+  /// Every raw route cell with its center point and ASCII-grid weight.
+  ///
+  /// Unlike [vertices], these values are not simplified, so each item maps to
+  /// exactly one traversed raster cell in travel order.
+  final List<LeastCostPathStep> steps;
+
+  /// Builds an alternate polyline from the first route cell whose raster
+  /// weight is strictly greater than [threshold] through the destination.
+  Polyline? polylineFromFirstWeightAbove(double threshold) {
+    return splitAtFirstWeightAbove(threshold)?.alternate;
+  }
+
+  /// Splits the raw route at its first cell whose raster weight is strictly
+  /// greater than [threshold].
+  ///
+  /// The alternate segment begins at that qualifying cell and continues to the
+  /// destination. It is `null` when no route cell exceeds [threshold].
+  LeastCostPathThresholdSplit? splitAtFirstWeightAbove(double threshold) {
+    if (!threshold.isFinite) {
+      throw ArgumentError.value(threshold, 'threshold', 'Must be finite.');
+    }
+    final firstHighWeightIndex = steps.indexWhere(
+      (step) => step.weight > threshold,
+    );
+    if (firstHighWeightIndex == -1) return null;
+
+    return LeastCostPathThresholdSplit(
+      beforeAlternate: firstHighWeightIndex == 0
+          ? null
+          : _polylineForSteps(steps.sublist(0, firstHighWeightIndex)),
+      alternate: _polylineForSteps(steps.sublist(firstHighWeightIndex)),
+    );
+  }
+
+  static Polyline _polylineForSteps(List<LeastCostPathStep> routeSteps) {
+    final builder = PolylineBuilder(
+      spatialReference: routeSteps.first.center.spatialReference!,
+    );
+    for (final step in routeSteps) {
+      builder.addPoint(step.center);
+    }
+    if (routeSteps.length == 1) {
+      builder.addPoint(routeSteps.single.center);
+    }
+    return builder.toGeometry() as Polyline;
+  }
+
   /// Sum of cost-weighted movement distance along the path.
   final double accumulatedCost;
+}
+
+/// The off-road route portions before and from the first high-weight cell.
+class LeastCostPathThresholdSplit {
+  const LeastCostPathThresholdSplit({
+    required this.beforeAlternate,
+    required this.alternate,
+  });
+
+  /// The route before [alternate], or `null` when the route starts there.
+  final Polyline? beforeAlternate;
+
+  /// The route from its first cell above the selected weight through the end.
+  final Polyline alternate;
+}
+
+/// A raw route cell with the cost-surface weight used by the solver.
+class LeastCostPathStep {
+  const LeastCostPathStep({
+    required this.cell,
+    required this.center,
+    required this.weight,
+  });
+
+  final LeastCostPathCell cell;
+  final ArcGISPoint center;
+  final double weight;
 }
 
 /// Public row/column index of a traversed ASCII-grid cell.
@@ -536,6 +634,9 @@ _SolvedGridPath _loadAsciiGridAndSolve({
   final result = _findLeastCostPath(grid, start, destination);
   return _SolvedGridPath(
     cells: result.cells,
+    weights: List<double>.unmodifiable(
+      result.cells.map((cell) => grid.costs[grid.indexOf(cell)]),
+    ),
     cost: result.cost,
     rows: grid.rows,
     xMin: grid.xMin,
@@ -547,6 +648,7 @@ _SolvedGridPath _loadAsciiGridAndSolve({
 class _SolvedGridPath {
   const _SolvedGridPath({
     required this.cells,
+    required this.weights,
     required this.cost,
     required this.rows,
     required this.xMin,
@@ -555,6 +657,7 @@ class _SolvedGridPath {
   });
 
   final List<_GridCell> cells;
+  final List<double> weights;
   final double cost;
   final int rows;
   final double xMin;
