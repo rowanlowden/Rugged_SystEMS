@@ -56,6 +56,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   bool _mapLoaded = false;
   bool _locationEnabled = false;
   bool _busy = true;
+  bool _isGeneratingRoute = false;
   bool _serviceFault = false;
   bool _dispatchCallShown = false;
   bool _dispatchCallAccepted = false;
@@ -224,7 +225,11 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       return false;
     }
 
-    _setStatus('Generating on-road and off-road routes…', busy: true);
+    setState(() {
+      _isGeneratingRoute = true;
+      _status = 'Generating on-road and off-road routes…';
+      _busy = true;
+    });
     try {
       if (_onRoadRoutePlotter.service == null) {
         await _onRoadRoutePlotter.loadService();
@@ -270,6 +275,11 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       debugPrint('$message\n$stackTrace');
       _setStatus(message, busy: false);
       _showMessage(message);
+    }
+    finally {
+      if (mounted) {
+        setState(() => _isGeneratingRoute = false);
+      }
     }
     return false;
   }
@@ -491,7 +501,9 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return Stack(
+      children: [
+        Scaffold(
       appBar: AppBar(
         title: const Text('Rugged SystEMS'),
         bottom: PreferredSize(
@@ -554,7 +566,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
                 child: HospitalNavigationHud(profile: _profile),
               ),
             ),
-          if (_serviceFault || (_busy && !_dispatchCallAccepted))
+          if (_serviceFault || (_busy && !_isGeneratingRoute))
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.only(top: 74),
@@ -587,18 +599,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
                 ),
               ),
             ),
-          if (_dispatchCallShown && !_dispatchCallAccepted)
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: SafeArea(
-                top: false,
-                child: DispatchCallPanel(
-                  profile: _profile,
-                  coordinatesLabel: _coordinatesLabel,
-                  onAcceptNavigate: _acceptDispatchCall,
-                ),
-              ),
-            ),
           if (_currentDispatchOpen)
             Positioned.fill(
               child: CurrentDispatchOverlay(
@@ -610,6 +610,18 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
         ],
       ),
       floatingActionButton: null,
+        ),
+        if (_dispatchCallShown && !_dispatchCallAccepted)
+          Positioned.fill(
+            child: DispatchCallPanel(
+              profile: _profile,
+              coordinatesLabel: _coordinatesLabel,
+              onAcceptNavigate: _acceptDispatchCall,
+            ),
+          ),
+        if (_isGeneratingRoute)
+          Positioned.fill(child: _RouteLoadingScreen(message: _status)),
+      ],
     );
   }
 }
@@ -643,3 +655,43 @@ class _StatusCard extends StatelessWidget {
     );
   }
 }
+
+class _RouteLoadingScreen extends StatelessWidget {
+  const _RouteLoadingScreen({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: colorScheme.surface,
+      child: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox.square(
+                  dimension: 48,
+                  child: CircularProgressIndicator(),
+                ),
+                const SizedBox(height: 24),
+                Text(
+                  'Generating route',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Text(message, textAlign: TextAlign.center),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+

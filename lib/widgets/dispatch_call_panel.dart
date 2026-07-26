@@ -19,12 +19,14 @@ class DispatchCallPanel extends StatelessWidget {
     final theme = Theme.of(context);
 
     return Container(
-      color: const Color(0xEE101317),
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+      color: const Color(0xFF101317),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
           Align(
             alignment: Alignment.centerLeft,
             child: Container(
@@ -96,7 +98,7 @@ class DispatchCallPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          FilledButton(
+              FilledButton(
             onPressed: onAcceptNavigate,
             style: FilledButton.styleFrom(
               backgroundColor: const Color(0xFF1E3B1B),
@@ -113,8 +115,10 @@ class DispatchCallPanel extends StatelessWidget {
                 letterSpacing: 0.8,
               ),
             ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
