@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io';
 
 import 'package:arcgis_maps/arcgis_maps.dart';
@@ -5,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'offroad_route.dart';
+import 'locationspoof.dart';
 import 'plot_offroad_route.dart';
 import 'plot_onroad_route.dart';
 import 'utils/consts.dart';
@@ -47,6 +49,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       ArcGISMapView.createController();
   late final OffroadRoutePlotter _offroadRoutePlotter;
   late final OnRoadRoutePlotter _onRoadRoutePlotter;
+  late final PathLocationSpoofer _locationSpoofer;
   late final DemoIncidentProfile _profile;
 
   bool _mapViewReady = false;
@@ -74,6 +77,14 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     _coordinatesLabel = _profile.stagingCoordinates;
     _offroadRoutePlotter = OffroadRoutePlotter(_mapViewController);
     _onRoadRoutePlotter = OnRoadRoutePlotter(_mapViewController);
+    _locationSpoofer = PathLocationSpoofer(
+      onFinished: () {
+        if (!mounted) return;
+        setState(
+          () => _status = 'Simulated navigation reached the destination.',
+        );
+      },
+    );
     _loadOfflineMap();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showDispatchCallNotification();
@@ -129,16 +140,12 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
 
   Future<String?> _findOfflineMmpkAssetPath() async {
     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-    final expectedAssetPath =
-        '$offlineMapAssetDirectory$offlineMapAssetName'.toLowerCase();
-    final matchingMapAssets =
-        manifest
-            .listAssets()
-            .where(
-              (assetPath) =>
-                  assetPath.toLowerCase() == expectedAssetPath,
-            )
-            .toList();
+    final expectedAssetPath = '$offlineMapAssetDirectory$offlineMapAssetName'
+        .toLowerCase();
+    final matchingMapAssets = manifest
+        .listAssets()
+        .where((assetPath) => assetPath.toLowerCase() == expectedAssetPath)
+        .toList();
 
     if (matchingMapAssets.isEmpty) {
       return null;
@@ -169,7 +176,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     return normalizedPath.substring(lastSlashIndex + 1);
   }
 
-  void _toggleLocation() {
+  Future<void> _toggleLocation() async {
     if (!_mapViewReady || !_mapLoaded) return;
 
     final locationDisplay = _mapViewController.locationDisplay;
@@ -177,6 +184,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     try {
       if (_locationEnabled) {
         locationDisplay.stop();
+        await _locationSpoofer.stop();
 
         if (!mounted) return;
         setState(() {
@@ -186,6 +194,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
         return;
       }
 
+      await _locationSpoofer.stop();
       locationDisplay.dataSource = SystemLocationDataSource();
       locationDisplay.autoPanMode = LocationDisplayAutoPanMode.recenter;
 
@@ -243,10 +252,17 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
 
       await _offroadRoutePlotter.displayRoute(offroadRoute, zoom: false);
       await _onRoadRoutePlotter.displayRoute(onRoadRoute);
+      await _locationSpoofer.start(
+        paths: [onRoadRoute.polyline, offroadRoute.polyline],
+        metersPerSecond: 12,
+        locationDisplay: _mapViewController.locationDisplay,
+      );
+      _mapViewController.locationDisplay.start();
       if (!mounted) return false;
 
       setState(() {
         _offroadRoute = offroadRoute;
+        _locationEnabled = true;
         _busy = false;
         _serviceFault = false;
         _status =
@@ -416,6 +432,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   @override
   void dispose() {
     _mapViewController.locationDisplay.stop();
+    unawaited(_locationSpoofer.dispose());
     _offroadRoutePlotter.detach();
     _onRoadRoutePlotter.detach();
     _mapViewController.dispose();
@@ -456,6 +473,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
               if (!mounted) return;
               _offroadRoutePlotter.attach();
               _onRoadRoutePlotter.attach();
+              _locationSpoofer.attach(_mapViewController);
               setState(() => _mapViewReady = true);
             },
           ),
