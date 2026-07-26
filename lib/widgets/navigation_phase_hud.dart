@@ -92,8 +92,7 @@ class NavigationPhaseHud extends StatelessWidget {
     }
 
     final segment = segments[index];
-    final shortName = segment.name.toUpperCase().split(' ').first;
-    return '$shortName (${segment.distance.toUpperCase()})';
+    return segment.name.toUpperCase().split(' ').first;
   }
 }
 
