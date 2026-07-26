@@ -92,7 +92,7 @@ class DispatchCallPanel extends StatelessWidget {
                   Expanded(
                     child: _HudCard(
                       child: _MetricTile(
-                        label: 'COORDINATES',
+                        label: 'PATIENT COORDINATES',
                         value: coordinatesLabel,
                       ),
                     ),

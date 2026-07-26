@@ -123,7 +123,7 @@ class MapHeaderBar extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              'Coordinates: $coordinatesLabel',
+              'Patient Coordinates: $coordinatesLabel',
               style: theme.textTheme.bodyMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),

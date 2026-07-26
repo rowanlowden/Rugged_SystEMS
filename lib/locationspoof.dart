@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:arcgis_maps/arcgis_maps.dart';
+import 'package:flutter/foundation.dart' show ValueChanged;
 import 'package:flutter/material.dart' show Colors;
 
 /// Moves a point feature along ordered generated route polylines at a constant
@@ -56,6 +57,7 @@ class PathLocationSpoofer {
     LocationDisplayAutoPanMode autoPanMode =
         LocationDisplayAutoPanMode.recenter,
     void Function()? onFinished,
+    ValueChanged<double>? onProgress,
   }) async {
     if (paths.isEmpty) {
       throw ArgumentError.value(
@@ -93,11 +95,17 @@ class PathLocationSpoofer {
     _dataSource = source;
     _finished = false;
     marker.geometry = source.locations.first.position;
+    onProgress?.call(0);
     final completionCallback = onFinished ?? this.onFinished;
     late final StreamSubscription<ArcGISLocation> subscription;
     subscription = source.onLocationChanged.listen((location) {
       if (session != _session) return;
       marker.geometry = location.position;
+      final lastIndex = source.locations.length - 1;
+      if (lastIndex > 0) {
+        final progress = source.currentLocationIndex / lastIndex;
+        onProgress?.call(progress.clamp(0, 1).toDouble());
+      }
       if (!_finished &&
           source.currentLocationIndex >= source.locations.length - 1) {
         _finished = true;

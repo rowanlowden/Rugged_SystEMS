@@ -11,6 +11,12 @@ class NavigationStatusPanel extends StatelessWidget {
     required this.onPatientReached,
     this.pavedSpeedOverride,
     this.offroadSpeedOverride,
+    this.pavedRoadEta,
+    this.pavedRouteProgress,
+    this.offroadRoadEta,
+    this.offroadRouteProgress,
+    this.walkingDistanceToPatient,
+    this.walkingCanMarkReached = true,
   });
 
   final NavigationPhase phase;
@@ -18,6 +24,12 @@ class NavigationStatusPanel extends StatelessWidget {
   final VoidCallback onPatientReached;
   final String? pavedSpeedOverride;
   final String? offroadSpeedOverride;
+  final String? pavedRoadEta;
+  final String? pavedRouteProgress;
+  final String? offroadRoadEta;
+  final String? offroadRouteProgress;
+  final String? walkingDistanceToPatient;
+  final bool walkingCanMarkReached;
 
   @override
   Widget build(BuildContext context) {
@@ -26,16 +38,22 @@ class NavigationStatusPanel extends StatelessWidget {
         return _PavedStatus(
           profile: profile,
           speedOverride: pavedSpeedOverride,
+          roadEta: pavedRoadEta,
+          routeProgress: pavedRouteProgress,
         );
       case NavigationPhase.offroad:
         return _OffroadStatus(
           profile: profile,
           speedOverride: offroadSpeedOverride,
+          roadEta: offroadRoadEta,
+          routeProgress: offroadRouteProgress,
         );
       case NavigationPhase.walking:
         return _WalkingStatus(
           profile: profile,
           onPatientReached: onPatientReached,
+          distanceToPatient: walkingDistanceToPatient,
+          canMarkReached: walkingCanMarkReached,
         );
     }
   }
@@ -62,10 +80,17 @@ class _BasePanel extends StatelessWidget {
 }
 
 class _PavedStatus extends StatelessWidget {
-  const _PavedStatus({required this.profile, this.speedOverride});
+  const _PavedStatus({
+    required this.profile,
+    this.speedOverride,
+    this.roadEta,
+    this.routeProgress,
+  });
 
   final DemoIncidentProfile profile;
   final String? speedOverride;
+  final String? roadEta;
+  final String? routeProgress;
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +138,7 @@ class _PavedStatus extends StatelessWidget {
                 children: [
                   _monoLabel(theme, 'ROAD ETA'),
                   Text(
-                    profile.pavedRoadEta,
+                    roadEta ?? profile.pavedRoadEta,
                     style: theme.textTheme.headlineMedium?.copyWith(
                       color: const Color(0xFFC8CCCC),
                       fontWeight: FontWeight.w800,
@@ -129,7 +154,7 @@ class _PavedStatus extends StatelessWidget {
               _monoLabel(theme, 'ROUTE PROGRESS'),
               const Spacer(),
               Text(
-                profile.pavedRouteProgress,
+                routeProgress ?? profile.pavedRouteProgress,
                 style: theme.textTheme.titleMedium?.copyWith(
                   color: const Color(0xFFDCE3EC),
                 ),
@@ -143,10 +168,17 @@ class _PavedStatus extends StatelessWidget {
 }
 
 class _OffroadStatus extends StatelessWidget {
-  const _OffroadStatus({required this.profile, this.speedOverride});
+  const _OffroadStatus({
+    required this.profile,
+    this.speedOverride,
+    this.roadEta,
+    this.routeProgress,
+  });
 
   final DemoIncidentProfile profile;
   final String? speedOverride;
+  final String? roadEta;
+  final String? routeProgress;
 
   @override
   Widget build(BuildContext context) {
@@ -197,7 +229,7 @@ class _OffroadStatus extends StatelessWidget {
                 children: [
                   _monoLabel(theme, 'ROAD ETA'),
                   Text(
-                    _offroadRoadEta(profile),
+                    roadEta ?? _offroadRoadEta(profile),
                     style: theme.textTheme.headlineMedium?.copyWith(
                       color: const Color(0xFFD4A017),
                       fontWeight: FontWeight.w800,
@@ -213,7 +245,7 @@ class _OffroadStatus extends StatelessWidget {
               _monoLabel(theme, 'ROUTE PROGRESS'),
               const Spacer(),
               Text(
-                _offroadRouteProgress(profile),
+                routeProgress ?? _offroadRouteProgress(profile),
                 style: theme.textTheme.titleMedium?.copyWith(
                   color: const Color(0xFFDCE3EC),
                 ),
@@ -285,15 +317,23 @@ String _formatMiles(double miles) {
 }
 
 class _WalkingStatus extends StatelessWidget {
-  const _WalkingStatus({required this.profile, required this.onPatientReached});
+  const _WalkingStatus({
+    required this.profile,
+    required this.onPatientReached,
+    this.distanceToPatient,
+    required this.canMarkReached,
+  });
 
   final DemoIncidentProfile profile;
   final VoidCallback onPatientReached;
+  final String? distanceToPatient;
+  final bool canMarkReached;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final distanceToPatient = _walkingDistanceToPatient(profile);
+    final distanceText =
+        distanceToPatient ?? _walkingDistanceToPatient(profile);
 
     return _BasePanel(
       child: Column(
@@ -305,7 +345,7 @@ class _WalkingStatus extends StatelessWidget {
           Row(
             children: [
               Text(
-                distanceToPatient,
+                distanceText,
                 style: theme.textTheme.displaySmall?.copyWith(
                   color: const Color(0xFFC8CCCC),
                   fontWeight: FontWeight.w900,
@@ -315,17 +355,21 @@ class _WalkingStatus extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           FilledButton(
-            onPressed: onPatientReached,
+            onPressed: canMarkReached ? onPatientReached : null,
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFE53935),
+              backgroundColor: canMarkReached
+                  ? const Color(0xFFE53935)
+                  : const Color(0xFF6D737D),
+              disabledBackgroundColor: const Color(0xFF6D737D),
               foregroundColor: const Color(0xFFC8CCCC),
+              disabledForegroundColor: const Color(0xFFC8CCCC),
               minimumSize: const Size.fromHeight(50),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(6),
               ),
             ),
             child: Text(
-              'PATIENT REACHED',
+              canMarkReached ? 'PATIENT REACHED' : 'IN ROUTE',
               style: theme.textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w900,
                 letterSpacing: 0.5,

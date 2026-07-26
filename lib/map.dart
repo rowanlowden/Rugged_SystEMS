@@ -436,6 +436,8 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
               child: CurrentDispatchOverlay(
                 profile: _profile,
                 coordinatesLabel: _coordinatesLabel,
+                totalResponseTime: _profile.totalResponseTime,
+                totalDistance: _profile.totalDistance,
                 onClose: _closeCurrentDispatch,
               ),
             ),
