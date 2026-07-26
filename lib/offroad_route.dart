@@ -6,26 +6,25 @@ import 'package:arcgis_maps/arcgis_maps.dart';
 import 'package:flutter/foundation.dart' show FlutterError, debugPrint;
 import 'package:flutter/services.dart';
 
-const offroadGridWkid = 4326;
+const offroadGridWkid = 3071;
 
 /// Solves the build-time configured least-cost path from one local Esri ASCII
 /// cost grid. No display raster, map view, network service, or user input is
 /// used.
 ///
-/// The bundled default is `test_data/test.asc`. Configure an existing local
-/// grid-file path and coordinate-system WKID with `--dart-define`.
+/// The bundled default is `assets/offline/costsurface.asc`, interpreted as
+/// WKID 3071. Configure an existing local grid-file path with `--dart-define`.
 /// Start and destination coordinates are selected randomly from connected,
 /// traversable cells in the grid.
 ///
 /// ```text
 /// OFFLINE_COST_GRID_PATH=/app/data/cost.asc
-/// OFFLINE_COST_GRID_WKID=32615
 /// ```
 Future<LeastCostPathResult> solvePresetLeastCostPath() async {
   debugPrint('Starting least-cost-path analysis using an Esri ASCII grid...');
   const gridPath = String.fromEnvironment(
     'OFFLINE_COST_GRID_PATH',
-    defaultValue: 'test_data/test.asc',
+    defaultValue: 'assets/offline/costsurface.asc',
   );
   const wkid = offroadGridWkid;
 
@@ -56,7 +55,7 @@ Future<LeastCostPathResult> solveLeastCostPathFromOnRoadDestination({
 }) async {
   const gridPath = String.fromEnvironment(
     'OFFLINE_COST_GRID_PATH',
-    defaultValue: 'test_data/test.asc',
+    defaultValue: 'assets/offline/costsurface.asc',
   );
   final localGridPath = await _resolveCostGridPath(gridPath);
   return OfflineLeastCostPathSolver(

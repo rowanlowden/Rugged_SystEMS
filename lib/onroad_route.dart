@@ -8,8 +8,8 @@ import 'package:flutter/services.dart' show rootBundle;
 /// Creates and tracks routes using geocoded addresses and a transportation
 /// network packaged in a local [MobileMapPackage].
 class OfflineAddressRouteService {
-  static const _testDataMmpkAssetPath =
-      'test_data/RoadNetworkaAndAddressGeocode.mmpk';
+  static const _offlineRoutingMmpkAssetPath =
+      'assets/offline/RoadNetworkaAndAddressGeocode.mmpk';
 
   OfflineAddressRouteService.fromMobileMapPackage(
     MobileMapPackage mobileMapPackage,
@@ -20,10 +20,10 @@ class OfflineAddressRouteService {
   /// Loads the MMPK containing the Vernon address locator and road network.
   ///
   /// [mmpkUri] must identify an app-readable local copy of the package. When
-  /// omitted, this method copies the bundled project test-data package to a
+  /// omitted, this method copies the bundled offline routing package to a
   /// local temporary file before loading it.
   static Future<OfflineAddressRouteService> loadFromMmpk({Uri? mmpkUri}) async {
-    final localMmpkUri = mmpkUri ?? await _materializeTestDataMmpk();
+    final localMmpkUri = mmpkUri ?? await _materializeOfflineRoutingMmpk();
     final package = MobileMapPackage.withFileUri(localMmpkUri);
     await package.load();
 
@@ -44,8 +44,8 @@ class OfflineAddressRouteService {
     return OfflineAddressRouteService.fromMobileMapPackage(package);
   }
 
-  static Future<Uri> _materializeTestDataMmpk() async {
-    final assetData = await rootBundle.load(_testDataMmpkAssetPath);
+  static Future<Uri> _materializeOfflineRoutingMmpk() async {
+    final assetData = await rootBundle.load(_offlineRoutingMmpkAssetPath);
     final directory = await Directory.systemTemp.createTemp('rugged_mmpk_');
     final outputFile = File(
       '${directory.path}/RoadNetworkaAndAddressGeocode.mmpk',

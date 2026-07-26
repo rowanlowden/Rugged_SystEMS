@@ -339,24 +339,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     }
 
     await _setNavigationPhase(NavigationPhase.paved);
-
-    _advanceNavigationPhases();
-  }
-
-  Future<void> _advanceNavigationPhases() async {
-    await Future<void>.delayed(const Duration(seconds: 6));
-    if (!mounted || _activePhase != NavigationPhase.paved) {
-      return;
-    }
-
-    await _setNavigationPhase(NavigationPhase.offroad);
-
-    await Future<void>.delayed(const Duration(seconds: 6));
-    if (!mounted || _activePhase != NavigationPhase.offroad) {
-      return;
-    }
-
-    await _setNavigationPhase(NavigationPhase.walking);
   }
 
   Future<void> _setNavigationPhase(NavigationPhase phase) async {
