@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:arcgis_maps/arcgis_maps.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:flutter/material.dart' show Colors;
+import 'package:flutter/material.dart' show Color;
 import 'package:flutter/services.dart' show rootBundle;
 
 /// Creates and tracks routes using geocoded addresses and a transportation
@@ -123,15 +123,7 @@ class OfflineAddressRouteService {
     if (polyline == null) {
       throw StateError('The solved route did not contain a polyline.');
     }
-    final destinationGeometry = route.stops.isEmpty
-        ? null
-        : route.stops.last.geometry;
-    if (destinationGeometry is! ArcGISPoint) {
-      throw StateError(
-        'The solved route did not return a destination stop point.',
-      );
-    }
-    final destinationPoint = destinationGeometry;
+    final destinationPoint = addresses[1];
 
     final tracker = RouteTracker.create(
       routeResult: routeResult,
@@ -173,7 +165,7 @@ class OfflineAddressRouteService {
     if (polyline == null) return null;
     return Graphic(
       geometry: polyline,
-      symbol: SimpleLineSymbol(color: Colors.blue, width: 5),
+      symbol: SimpleLineSymbol(color: Color(0xFF1E3B1B), width: 5),
     );
   }
 

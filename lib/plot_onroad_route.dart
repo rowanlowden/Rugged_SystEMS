@@ -1,5 +1,5 @@
 import 'package:arcgis_maps/arcgis_maps.dart';
-import 'package:flutter/material.dart' show Colors;
+import 'package:flutter/material.dart' show Color;
 
 import 'onroad_route.dart';
 
@@ -75,7 +75,7 @@ class OnRoadRoutePlotter {
       ..add(
         Graphic(
           geometry: route.polyline,
-          symbol: SimpleLineSymbol(color: Colors.blue, width: 5),
+          symbol: SimpleLineSymbol(color: Color(0xFF2A5427), width: 5),
         ),
       );
     if (zoom) {
