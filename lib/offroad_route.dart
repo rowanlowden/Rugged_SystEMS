@@ -20,8 +20,10 @@ import 'package:flutter/services.dart';
 /// OFFLINE_COST_GRID_WKID=32615
 /// ```
 Future<LeastCostPathResult> solvePresetLeastCostPath() async {
-  const gridPath = String.fromEnvironment('OFFLINE_COST_GRID_PATH',
-    defaultValue: 'test_data/test.asc');
+  const gridPath = String.fromEnvironment(
+    'OFFLINE_COST_GRID_PATH',
+    defaultValue: 'test_data/test.asc',
+  );
   const wkid = 4326;
 
   if (gridPath.trim().isEmpty) {
@@ -29,7 +31,6 @@ Future<LeastCostPathResult> solvePresetLeastCostPath() async {
       'OFFLINE_COST_GRID_PATH must identify an app-readable Esri ASCII grid.',
     );
   }
-
 
   final localGridPath = await _resolveCostGridPath(gridPath);
 
@@ -298,8 +299,14 @@ _RandomRouteCoordinates _loadAsciiGridAndSelectRandomCoordinates(String path) {
 
 List<_GridCell> _reachableCells(_AsciiCostGrid grid, _GridCell start) {
   const directions = <(int, int)>[
-    (-1, 0), (1, 0), (0, -1), (0, 1),
-    (-1, -1), (-1, 1), (1, -1), (1, 1),
+    (-1, 0),
+    (1, 0),
+    (0, -1),
+    (0, 1),
+    (-1, -1),
+    (-1, 1),
+    (1, -1),
+    (1, 1),
   ];
   final cells = <_GridCell>[start];
   final visited = <int>{grid.indexOf(start)};
@@ -316,7 +323,8 @@ List<_GridCell> _reachableCells(_AsciiCostGrid grid, _GridCell start) {
       final next = _GridCell(row, column);
       final nextIndex = grid.indexOf(next);
       if (visited.contains(nextIndex) || !grid.isTraversable(next)) continue;
-      if (rowDelta != 0 && columnDelta != 0 &&
+      if (rowDelta != 0 &&
+          columnDelta != 0 &&
           (!grid.isTraversable(_GridCell(current.row, column)) ||
               !grid.isTraversable(_GridCell(row, current.column)))) {
         continue;

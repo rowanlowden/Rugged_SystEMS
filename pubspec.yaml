@@ -28,6 +28,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/offline/
-    - test_data/test.asc
-    - test_data/RoadNetworkaAndAddressGeocode.mmpk
+    #- test_data/test.asc
+    #- test_data/RoadNetworkaAndAddressGeocode.mmpk
     - assets/icons/
