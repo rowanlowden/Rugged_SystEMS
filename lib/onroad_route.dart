@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:arcgis_maps/arcgis_maps.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/material.dart' show Colors;
 import 'package:flutter/services.dart' show rootBundle;
 
@@ -122,6 +123,15 @@ class OfflineAddressRouteService {
     if (polyline == null) {
       throw StateError('The solved route did not contain a polyline.');
     }
+    final destinationGeometry = route.stops.isEmpty
+        ? null
+        : route.stops.last.geometry;
+    if (destinationGeometry is! ArcGISPoint) {
+      throw StateError(
+        'The solved route did not return a destination stop point.',
+      );
+    }
+    final destinationPoint = destinationGeometry;
 
     final tracker = RouteTracker.create(
       routeResult: routeResult,
@@ -134,12 +144,13 @@ class OfflineAddressRouteService {
 
     savedPolyline = polyline;
     routeTracker = tracker;
-    print(
+    debugPrint(
       'Route generated successfully: ${route.totalLength.toStringAsFixed(0)} m, '
       '${route.totalTime.toStringAsFixed(1)} min.',
     );
     return OnRoadRoute(
       polyline: polyline,
+      destination: destinationPoint,
       routeResult: routeResult,
       routeTracker: tracker,
       totalLengthMeters: route.totalLength,
@@ -189,6 +200,7 @@ class OfflineAddressRouteService {
 class OnRoadRoute {
   const OnRoadRoute({
     required this.polyline,
+    required this.destination,
     required this.routeResult,
     required this.routeTracker,
     required this.totalLengthMeters,
@@ -196,6 +208,7 @@ class OnRoadRoute {
   });
 
   final Polyline polyline;
+  final ArcGISPoint destination;
   final RouteResult routeResult;
   final RouteTracker routeTracker;
   final double totalLengthMeters;
