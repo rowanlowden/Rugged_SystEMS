@@ -15,7 +15,6 @@ class NavigationPhaseHud extends StatelessWidget {
     required this.walkingAdvisoryTitle,
     required this.walkingAdvisoryDetails,
     required this.onPhaseSelected,
-    required this.onNextPhase,
   });
 
   final NavigationPhase phase;
@@ -27,7 +26,6 @@ class NavigationPhaseHud extends StatelessWidget {
   final String walkingAdvisoryTitle;
   final String walkingAdvisoryDetails;
   final ValueChanged<NavigationPhase> onPhaseSelected;
-  final VoidCallback onNextPhase;
 
   @override
   Widget build(BuildContext context) {
@@ -81,22 +79,6 @@ class NavigationPhaseHud extends StatelessWidget {
                     onTap: () => onPhaseSelected(NavigationPhase.walking),
                   ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerRight,
-                child: OutlinedButton.icon(
-                  onPressed: onNextPhase,
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0xFF3A4250)),
-                    foregroundColor: const Color(0xFFD0D8E4),
-                    minimumSize: const Size(0, 34),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  icon: const Icon(Icons.skip_next, size: 18),
-                  label: const Text('Next Phase'),
-                ),
               ),
             ],
           ),

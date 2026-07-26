@@ -6,10 +6,12 @@ class CurrentDispatchOverlay extends StatelessWidget {
   const CurrentDispatchOverlay({
     super.key,
     required this.profile,
+    required this.coordinatesLabel,
     required this.onClose,
   });
 
   final DemoIncidentProfile profile;
+  final String coordinatesLabel;
   final VoidCallback onClose;
 
   @override
@@ -86,7 +88,7 @@ class CurrentDispatchOverlay extends StatelessWidget {
                           child: _Card(
                             child: _Metric(
                               label: 'COORDINATES',
-                              value: profile.incidentCoordinates,
+                              value: coordinatesLabel,
                             ),
                           ),
                         ),
@@ -107,8 +109,8 @@ class CurrentDispatchOverlay extends StatelessWidget {
                         Expanded(
                           child: _Card(
                             child: _Metric(
-                              label: 'EST. DISTANCE',
-                              value: profile.estimatedDistance,
+                              label: 'TOTAL RESP TIME',
+                              value: profile.totalResponseTime,
                             ),
                           ),
                         ),
@@ -116,8 +118,8 @@ class CurrentDispatchOverlay extends StatelessWidget {
                         Expanded(
                           child: _Card(
                             child: _Metric(
-                              label: 'EST. RESPONSE TIME',
-                              value: profile.estimatedResponseTime,
+                              label: 'TOTAL DISTANCE',
+                              value: profile.totalDistance,
                             ),
                           ),
                         ),

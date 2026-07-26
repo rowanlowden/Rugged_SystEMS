@@ -6,10 +6,12 @@ class DispatchCallPanel extends StatelessWidget {
   const DispatchCallPanel({
     super.key,
     required this.profile,
+    required this.coordinatesLabel,
     required this.onAcceptNavigate,
   });
 
   final DemoIncidentProfile profile;
+  final String coordinatesLabel;
   final VoidCallback onAcceptNavigate;
 
   @override
@@ -78,7 +80,7 @@ class DispatchCallPanel extends StatelessWidget {
                 child: _HudCard(
                   child: _MetricTile(
                     label: 'COORDINATES',
-                    value: profile.incidentCoordinates,
+                    value: coordinatesLabel,
                   ),
                 ),
               ),
@@ -88,30 +90,6 @@ class DispatchCallPanel extends StatelessWidget {
                   child: _MetricTile(
                     label: 'LOCATION EST.',
                     value: profile.locationEstimate,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _HudCard(
-                  child: _MetricTile(
-                    label: 'EST. DISTANCE',
-                    value: profile.estimatedDistance,
-                    emphasize: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _HudCard(
-                  child: _MetricTile(
-                    label: 'EST. RESPONSE TIME',
-                    value: profile.estimatedResponseTime,
-                    emphasize: true,
                   ),
                 ),
               ),
@@ -180,15 +158,10 @@ class _SectionLabel extends StatelessWidget {
 }
 
 class _MetricTile extends StatelessWidget {
-  const _MetricTile({
-    required this.label,
-    required this.value,
-    this.emphasize = false,
-  });
+  const _MetricTile({required this.label, required this.value});
 
   final String label;
   final String value;
-  final bool emphasize;
 
   @override
   Widget build(BuildContext context) {
@@ -202,9 +175,7 @@ class _MetricTile extends StatelessWidget {
         Text(
           value,
           style: theme.textTheme.titleLarge?.copyWith(
-            color: emphasize
-                ? const Color(0xFFC8CCCC)
-                : const Color(0xFFC8CCCC),
+            color: const Color(0xFFC8CCCC),
             fontWeight: FontWeight.w700,
           ),
         ),

@@ -72,7 +72,7 @@ class _PavedStatus extends StatelessWidget {
               Text(
                 profile.pavedSurfaceStatus,
                 style: theme.textTheme.titleMedium?.copyWith(
-                  color: const Color(0xFF1E3B1B),
+                  color: const Color(0xFFC8CCCC),
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -139,6 +139,8 @@ class _OffroadStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final offroadSpeedValue = _offroadSpeedValue(profile.offroadCurrentSpeed);
+    final offroadSpeedUnit = _offroadSpeedUnit(profile.offroadCurrentSpeed);
 
     return _BasePanel(
       child: Column(
@@ -147,7 +149,7 @@ class _OffroadStatus extends StatelessWidget {
         children: [
           Row(
             children: [
-              _monoLabel(theme, 'HEADING BEARING'),
+              _monoLabel(theme, 'CURRENT SPEED'),
               const Spacer(),
               Text(
                 profile.offroadFieldAccessLabel,
@@ -160,40 +162,47 @@ class _OffroadStatus extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                profile.offroadHeading,
-                style: theme.textTheme.displaySmall?.copyWith(
+                offroadSpeedValue,
+                style: theme.textTheme.displayMedium?.copyWith(
                   color: const Color(0xFFD4A017),
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               Text(
-                profile.offroadDistToExit,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: const Color(0xFFDCE3EC),
+                offroadSpeedUnit,
+                style: theme.textTheme.headlineSmall?.copyWith(
+                  color: const Color(0xFFD4A017),
                 ),
               ),
+              const Spacer(),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _monoLabel(theme, 'ROAD ETA'),
+                  Text(
+                    _offroadRoadEta(profile),
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      color: const Color(0xFFD4A017),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
             ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            profile.offroadAlignHint,
-            style: theme.textTheme.titleSmall?.copyWith(
-              color: const Color(0xFFDCE3EC),
-            ),
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              _monoLabel(theme, 'CURRENT SPEED'),
+              _monoLabel(theme, 'ROUTE PROGRESS'),
               const Spacer(),
               Text(
-                profile.offroadCurrentSpeed,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  color: const Color(0xFFD4A017),
-                  fontWeight: FontWeight.w800,
+                _offroadRouteProgress(profile),
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: const Color(0xFFDCE3EC),
                 ),
               ),
             ],
@@ -202,6 +211,64 @@ class _OffroadStatus extends StatelessWidget {
       ),
     );
   }
+}
+
+String _offroadSpeedValue(String speedText) {
+  final parts = speedText.trim().split(RegExp(r'\s+'));
+  if (parts.isEmpty || parts.first.isEmpty) {
+    return '--';
+  }
+  return parts.first;
+}
+
+String _offroadSpeedUnit(String speedText) {
+  final parts = speedText.trim().split(RegExp(r'\s+'));
+  if (parts.length < 2) {
+    return 'MPH';
+  }
+  return parts.sublist(1).join(' ');
+}
+
+String _offroadRoadEta(DemoIncidentProfile profile) {
+  if (profile.routeSegments.length < 2) {
+    return '--';
+  }
+  return profile.routeSegments[1].eta.toUpperCase();
+}
+
+String _offroadRouteProgress(DemoIncidentProfile profile) {
+  if (profile.routeSegments.length < 2) {
+    return _trimOffroadExitPrefix(profile.offroadDistToExit);
+  }
+
+  final totalMiles = _extractMiles(profile.routeSegments[1].distance);
+  final remainingMiles = _extractMiles(profile.offroadDistToExit);
+  if (totalMiles == null || remainingMiles == null) {
+    return _trimOffroadExitPrefix(profile.offroadDistToExit);
+  }
+
+  final progressedMiles = totalMiles > remainingMiles
+      ? totalMiles - remainingMiles
+      : 0.0;
+  return '${_formatMiles(progressedMiles)} / ${_formatMiles(totalMiles)}';
+}
+
+String _trimOffroadExitPrefix(String value) {
+  return value.replaceFirst('DIST TO OFFROAD EXIT ', '');
+}
+
+double? _extractMiles(String value) {
+  final match = RegExp(
+    r'(\d+(?:\.\d+)?)\s*(?:MI|MILES|mi|miles)',
+  ).firstMatch(value);
+  if (match == null) {
+    return null;
+  }
+  return double.tryParse(match.group(1)!);
+}
+
+String _formatMiles(double miles) {
+  return '${miles.toStringAsFixed(1)} MI';
 }
 
 class _WalkingStatus extends StatelessWidget {
@@ -213,59 +280,22 @@ class _WalkingStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final distanceToPatient = _walkingDistanceToPatient(profile);
 
     return _BasePanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              _monoLabel(theme, profile.walkingTelemetryTitle),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE53935),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  profile.walkingCriticalLabel,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: const Color(0xFF24090B),
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          _monoLabel(theme, 'DISTANCE TO PATIENT'),
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(
-                child: _vitalCard(
-                  theme,
-                  'HEART RATE',
-                  profile.walkingHeartRate,
-                  const Color(0xFFE53935),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _vitalCard(
-                  theme,
-                  'SPO2',
-                  profile.walkingSpo2,
-                  const Color(0xFFD4A017),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _vitalCard(
-                  theme,
-                  'RESP',
-                  profile.walkingResp,
-                  const Color(0xFFC8CCCC),
+              Text(
+                distanceToPatient,
+                style: theme.textTheme.displaySmall?.copyWith(
+                  color: const Color(0xFFC8CCCC),
+                  fontWeight: FontWeight.w900,
                 ),
               ),
             ],
@@ -293,41 +323,24 @@ class _WalkingStatus extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _vitalCard(
-    ThemeData theme,
-    String label,
-    String value,
-    Color valueColor,
-  ) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 9),
-      decoration: BoxDecoration(
-        color: const Color(0xFF1C2128),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: const Color(0xFFAAB4C1),
-              fontFamily: 'monospace',
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: theme.textTheme.titleLarge?.copyWith(
-              color: valueColor,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
+String _walkingDistanceToPatient(DemoIncidentProfile profile) {
+  if (profile.routeSegments.length < 3) {
+    return '340 M';
   }
+
+  final walkingDistance = profile.routeSegments[2].distance;
+  final numericMatch = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(walkingDistance);
+  if (numericMatch != null) {
+    final rawValue = double.tryParse(numericMatch.group(1)!);
+    if (rawValue != null) {
+      final meters = rawValue.round();
+      return '$meters M';
+    }
+  }
+
+  return '340 M';
 }
 
 Text _monoLabel(ThemeData theme, String text) {

@@ -16,8 +16,6 @@ import 'widgets/map_header_bar.dart';
 import 'widgets/navigation_phase.dart';
 import 'widgets/navigation_phase_hud.dart';
 import 'widgets/navigation_status_panel.dart';
-import 'widgets/patient_route_sheet.dart';
-import 'widgets/route_summary_bar.dart';
 
 const offlineMapAssetDirectory = 'assets/offline/';
 const _onRoadStartAddress = '7774 COUNTY ROAD P, WESTBY, WI 54667';
@@ -204,20 +202,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     }
   }
 
-  void _recenter() {
-    if (!_locationEnabled) {
-      _showMessage('Enable location before recentering.');
-      return;
-    }
-
-    _mapViewController.locationDisplay.autoPanMode =
-        LocationDisplayAutoPanMode.recenter;
-
-    setState(() {
-      _status = 'Following current location';
-    });
-  }
-
   Future<bool> _createRoute() async {
     if (!_mapLoaded || !_mapViewReady) {
       _showMessage('Wait for the offline map to finish loading.');
@@ -238,6 +222,10 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
             onRoadDestination: onRoadRoute.destination,
             maxDistanceMeters: 250,
           );
+      final routeTarget = offroadRoute.vertices.isNotEmpty
+          ? offroadRoute.vertices.last
+          : onRoadRoute.destination;
+      final routeCoordinatesLabel = _formatCoordinates(routeTarget);
       if (!mounted) return false;
 
       await _offroadRoutePlotter.displayRoute(offroadRoute, zoom: false);
@@ -248,6 +236,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
         _offroadRoute = offroadRoute;
         _busy = false;
         _serviceFault = false;
+        _coordinatesLabel = routeCoordinatesLabel;
         _status =
             'On-road and off-road routes are ready. '
             'Showing the on-road route.';
@@ -266,6 +255,32 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       _showMessage(message);
     }
     return false;
+  }
+
+  String _formatCoordinates(ArcGISPoint point) {
+    final geographicPoint = _projectToWgs84(point);
+    final latitude = geographicPoint.y;
+    final longitude = geographicPoint.x;
+    final latitudeHemisphere = latitude >= 0 ? 'N' : 'S';
+    final longitudeHemisphere = longitude >= 0 ? 'E' : 'W';
+
+    return '$latitudeHemisphere ${latitude.abs().toStringAsFixed(4)}, '
+        '$longitudeHemisphere ${longitude.abs().toStringAsFixed(4)}';
+  }
+
+  ArcGISPoint _projectToWgs84(ArcGISPoint point) {
+    if (point.spatialReference?.wkid == 4326) {
+      return point;
+    }
+
+    final projected = GeometryEngine.project(
+      point,
+      outputSpatialReference: SpatialReference(wkid: 4326),
+    );
+    if (projected is! ArcGISPoint) {
+      throw StateError('Could not project route coordinates to WKID 4326.');
+    }
+    return projected;
   }
 
   void _setStatus(String status, {required bool busy}) {
@@ -314,6 +329,8 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       _dispatchCallAccepted = true;
       _status = 'Dispatch accepted. Navigate to patient.';
     });
+
+    _startRoadNavigation();
   }
 
   void _openCurrentDispatch() {
@@ -361,25 +378,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
           _setStatus('Could not zoom to off-road route: $error', busy: false);
         }
       }
-    }
-  }
-
-  void _goToNextPhase() {
-    final currentPhase = _activePhase;
-    if (currentPhase == null) {
-      return;
-    }
-
-    switch (currentPhase) {
-      case NavigationPhase.paved:
-        _setNavigationPhase(NavigationPhase.offroad);
-        break;
-      case NavigationPhase.offroad:
-        _setNavigationPhase(NavigationPhase.walking);
-        break;
-      case NavigationPhase.walking:
-        _setNavigationPhase(NavigationPhase.walking);
-        break;
     }
   }
 
@@ -458,16 +456,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
               setState(() => _mapViewReady = true);
             },
           ),
-          if (!_navigationStarted && !_hospitalNavigationMode)
-            SafeArea(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: RouteSummaryBar(
-                  totalResponseTime: _profile.totalResponseTime,
-                  totalDistance: _profile.totalDistance,
-                ),
-              ),
-            ),
           if (_navigationStarted && !_hospitalNavigationMode)
             SafeArea(
               child: Align(
@@ -482,7 +470,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
                   walkingAdvisoryTitle: _profile.walkingAdvisoryTitle,
                   walkingAdvisoryDetails: _profile.walkingAdvisoryDetails,
                   onPhaseSelected: _setNavigationPhase,
-                  onNextPhase: _goToNextPhase,
                 ),
               ),
             ),
@@ -493,7 +480,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
                 child: HospitalNavigationHud(profile: _profile),
               ),
             ),
-          if (_busy || _serviceFault)
+          if (_serviceFault || (_busy && !_dispatchCallAccepted))
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.only(top: 74),
@@ -502,21 +489,6 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
                   child: _StatusCard(message: _status, showProgress: _busy),
                 ),
               ),
-            ),
-          if (!_navigationStarted && !_hospitalNavigationMode)
-            DraggableScrollableSheet(
-              initialChildSize: 0.22,
-              minChildSize: 0.12,
-              maxChildSize: 0.52,
-              snap: true,
-              snapSizes: const [0.22, 0.52],
-              builder: (context, scrollController) {
-                return PatientRouteSheet(
-                  scrollController: scrollController,
-                  onStartNavigation: _startRoadNavigation,
-                  routeSegments: _profile.routeSegments,
-                );
-              },
             ),
           if (_navigationStarted && !_hospitalNavigationMode)
             Align(
@@ -548,6 +520,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
                 top: false,
                 child: DispatchCallPanel(
                   profile: _profile,
+                  coordinatesLabel: _coordinatesLabel,
                   onAcceptNavigate: _acceptDispatchCall,
                 ),
               ),
@@ -556,23 +529,13 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
             Positioned.fill(
               child: CurrentDispatchOverlay(
                 profile: _profile,
+                coordinatesLabel: _coordinatesLabel,
                 onClose: _closeCurrentDispatch,
               ),
             ),
         ],
       ),
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          FloatingActionButton.small(
-            heroTag: 'recenter',
-            tooltip: 'Recenter',
-            onPressed: _mapLoaded ? _recenter : null,
-            child: const Icon(Icons.gps_fixed),
-          ),
-        ],
-      ),
+      floatingActionButton: null,
     );
   }
 }
