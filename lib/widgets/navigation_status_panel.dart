@@ -9,19 +9,29 @@ class NavigationStatusPanel extends StatelessWidget {
     required this.phase,
     required this.profile,
     required this.onPatientReached,
+    this.pavedSpeedOverride,
+    this.offroadSpeedOverride,
   });
 
   final NavigationPhase phase;
   final DemoIncidentProfile profile;
   final VoidCallback onPatientReached;
+  final String? pavedSpeedOverride;
+  final String? offroadSpeedOverride;
 
   @override
   Widget build(BuildContext context) {
     switch (phase) {
       case NavigationPhase.paved:
-        return _PavedStatus(profile: profile);
+        return _PavedStatus(
+          profile: profile,
+          speedOverride: pavedSpeedOverride,
+        );
       case NavigationPhase.offroad:
-        return _OffroadStatus(profile: profile);
+        return _OffroadStatus(
+          profile: profile,
+          speedOverride: offroadSpeedOverride,
+        );
       case NavigationPhase.walking:
         return _WalkingStatus(
           profile: profile,
@@ -52,9 +62,10 @@ class _BasePanel extends StatelessWidget {
 }
 
 class _PavedStatus extends StatelessWidget {
-  const _PavedStatus({required this.profile});
+  const _PavedStatus({required this.profile, this.speedOverride});
 
   final DemoIncidentProfile profile;
+  final String? speedOverride;
 
   @override
   Widget build(BuildContext context) {
@@ -83,7 +94,7 @@ class _PavedStatus extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                profile.pavedCurrentSpeed,
+                speedOverride ?? profile.pavedCurrentSpeed,
                 style: theme.textTheme.displayMedium?.copyWith(
                   color: const Color(0xFFC8CCCC),
                   fontWeight: FontWeight.w900,
@@ -132,15 +143,17 @@ class _PavedStatus extends StatelessWidget {
 }
 
 class _OffroadStatus extends StatelessWidget {
-  const _OffroadStatus({required this.profile});
+  const _OffroadStatus({required this.profile, this.speedOverride});
 
   final DemoIncidentProfile profile;
+  final String? speedOverride;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final offroadSpeedValue = _offroadSpeedValue(profile.offroadCurrentSpeed);
-    final offroadSpeedUnit = _offroadSpeedUnit(profile.offroadCurrentSpeed);
+    final speedText = speedOverride ?? profile.offroadCurrentSpeed;
+    final offroadSpeedValue = _offroadSpeedValue(speedText);
+    final offroadSpeedUnit = _offroadSpeedUnit(speedText);
 
     return _BasePanel(
       child: Column(

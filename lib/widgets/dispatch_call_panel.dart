@@ -22,99 +22,110 @@ class DispatchCallPanel extends StatelessWidget {
       color: const Color(0xFF101317),
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 20),
+          padding: const EdgeInsets.fromLTRB(14, 36, 14, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE53935),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                'INCOMING DISPATCH',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: const Color(0xFF190A0B),
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.2,
-                  fontFamily: 'monospace',
+              Center(
+                child: Image.asset(
+                  'assets/icons/RS_logo.png',
+                  height: 192,
+                  fit: BoxFit.contain,
                 ),
               ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          _HudCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _SectionLabel(text: 'PATIENT IDENTITY'),
-                const SizedBox(height: 4),
-                Text(
-                  profile.patientIdentity,
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: const Color(0xFFC8CCCC),
+              const SizedBox(height: 24),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 7,
                   ),
-                ),
-                const SizedBox(height: 10),
-                const Divider(height: 1, color: Color(0xFF30353D)),
-                const SizedBox(height: 10),
-                _SectionLabel(text: 'REPORTED EVENT'),
-                const SizedBox(height: 4),
-                Text(
-                  profile.reportedEvent,
-                  style: theme.textTheme.headlineSmall?.copyWith(
+                  decoration: BoxDecoration(
                     color: const Color(0xFFE53935),
-                    fontWeight: FontWeight.w700,
+                    borderRadius: BorderRadius.circular(4),
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _HudCard(
-                  child: _MetricTile(
-                    label: 'COORDINATES',
-                    value: coordinatesLabel,
+                  child: Text(
+                    'INCOMING DISPATCH',
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: const Color(0xFF190A0B),
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.2,
+                      fontFamily: 'monospace',
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _HudCard(
-                  child: _MetricTile(
-                    label: 'LOCATION EST.',
-                    value: profile.locationEstimate,
-                  ),
+              const SizedBox(height: 12),
+              _HudCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionLabel(text: 'PATIENT IDENTITY'),
+                    const SizedBox(height: 4),
+                    Text(
+                      profile.patientIdentity,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFFC8CCCC),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Divider(height: 1, color: Color(0xFF30353D)),
+                    const SizedBox(height: 10),
+                    _SectionLabel(text: 'REPORTED EVENT'),
+                    const SizedBox(height: 4),
+                    Text(
+                      profile.reportedEvent,
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        color: const Color(0xFFE53935),
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: _HudCard(
+                      child: _MetricTile(
+                        label: 'COORDINATES',
+                        value: coordinatesLabel,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _HudCard(
+                      child: _MetricTile(
+                        label: 'LOCATION EST.',
+                        value: profile.locationEstimate,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               FilledButton(
-            onPressed: onAcceptNavigate,
-            style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFF1E3B1B),
-              foregroundColor: const Color(0xFFC8CCCC),
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-            child: Text(
-              'ACCEPT & NAVIGATE',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.8,
-              ),
-            ),
+                onPressed: onAcceptNavigate,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF1E3B1B),
+                  foregroundColor: const Color(0xFFC8CCCC),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                child: Text(
+                  'ACCEPT & NAVIGATE',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.8,
+                  ),
+                ),
               ),
             ],
           ),

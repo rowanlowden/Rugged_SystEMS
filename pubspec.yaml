@@ -23,6 +23,7 @@ flutter_launcher_icons:
   image_path: assets/icons/RS_logo.png
   adaptive_icon_background: "#0F141B"
   adaptive_icon_foreground: assets/icons/RS_logo.png
+  adaptive_icon_foreground_inset: 20
 
 flutter:
   uses-material-design: true
