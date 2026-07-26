@@ -25,7 +25,7 @@ Future<LeastCostPathResult> solvePresetLeastCostPath() async {
     'OFFLINE_COST_GRID_PATH',
     defaultValue: 'assets/offline/costsurface.asc',
   );
-  const wkid = 4326;
+  const wkid = offroadGridWkid;
 
   if (gridPath.trim().isEmpty) {
     throw const FormatException(
@@ -387,18 +387,19 @@ _RandomRouteCoordinates _loadAsciiGridAndSelectNearbyRandomCoordinates({
 
   final startCenterX = _cellCenterX(grid, start);
   final startCenterY = _cellCenterY(grid, start);
-  final candidates = _reachableCells(grid, start)
-      .where((cell) => cell != start)
-      .where(
-        (cell) =>
-            _geodesicDistanceMeters(
-              startCenterX,
-              startCenterY,
+  final candidates = _reachableCells(
+        grid,
+        start,
+        includeCell: (cell) =>
+            _planarDistanceMeters(
+              startX,
+              startY,
               _cellCenterX(grid, cell),
               _cellCenterY(grid, cell),
             ) <=
             maxDistanceMeters,
       )
+      .where((cell) => cell != start)
       .toList();
   if (candidates.isEmpty) {
     throw PathNotFoundException(
@@ -416,29 +417,22 @@ _RandomRouteCoordinates _loadAsciiGridAndSelectNearbyRandomCoordinates({
   );
 }
 
-double _geodesicDistanceMeters(
-  double longitudeA,
-  double latitudeA,
-  double longitudeB,
-  double latitudeB,
+double _planarDistanceMeters(
+  double xA,
+  double yA,
+  double xB,
+  double yB,
 ) {
-  const earthRadiusMeters = 6371008.8;
-  final latitudeDelta = _degreesToRadians(latitudeB - latitudeA);
-  final longitudeDelta = _degreesToRadians(longitudeB - longitudeA);
-  final latitudeARadians = _degreesToRadians(latitudeA);
-  final latitudeBRadians = _degreesToRadians(latitudeB);
-  final haversine =
-      math.sin(latitudeDelta / 2) * math.sin(latitudeDelta / 2) +
-      math.cos(latitudeARadians) *
-          math.cos(latitudeBRadians) *
-          math.sin(longitudeDelta / 2) *
-          math.sin(longitudeDelta / 2);
-  return 2 * earthRadiusMeters * math.asin(math.sqrt(haversine));
+  final dx = xB - xA;
+  final dy = yB - yA;
+  return math.sqrt(dx * dx + dy * dy);
 }
 
-double _degreesToRadians(double degrees) => degrees * math.pi / 180;
-
-List<_GridCell> _reachableCells(_AsciiCostGrid grid, _GridCell start) {
+List<_GridCell> _reachableCells(
+  _AsciiCostGrid grid,
+  _GridCell start, {
+  bool Function(_GridCell cell)? includeCell,
+}) {
   const directions = <(int, int)>[
     (-1, 0),
     (1, 0),
@@ -463,7 +457,11 @@ List<_GridCell> _reachableCells(_AsciiCostGrid grid, _GridCell start) {
 
       final next = _GridCell(row, column);
       final nextIndex = grid.indexOf(next);
-      if (visited.contains(nextIndex) || !grid.isTraversable(next)) continue;
+      if (visited.contains(nextIndex) ||
+          !grid.isTraversable(next) ||
+          (includeCell != null && !includeCell(next))) {
+        continue;
+      }
       if (rowDelta != 0 &&
           columnDelta != 0 &&
           (!grid.isTraversable(_GridCell(current.row, column)) ||

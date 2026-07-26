@@ -20,6 +20,7 @@ import 'widgets/patient_route_sheet.dart';
 import 'widgets/route_summary_bar.dart';
 
 const offlineMapAssetDirectory = 'assets/offline/';
+const offlineMapAssetName = 'map_package.mmpk';
 const _onRoadStartAddress = '7774 COUNTY ROAD P, WESTBY, WI 54667';
 const _onRoadDestinationAddress = '7880 COUNTY ROAD P, WESTBY, WI 54667';
 
@@ -128,22 +129,22 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
 
   Future<String?> _findOfflineMmpkAssetPath() async {
     final manifest = await AssetManifest.loadFromAssetBundle(rootBundle);
-    final mmpkAssets =
+    final expectedAssetPath =
+        '$offlineMapAssetDirectory$offlineMapAssetName'.toLowerCase();
+    final matchingMapAssets =
         manifest
             .listAssets()
             .where(
               (assetPath) =>
-                  assetPath.startsWith(offlineMapAssetDirectory) &&
-                  assetPath.toLowerCase().endsWith('.mmpk'),
+                  assetPath.toLowerCase() == expectedAssetPath,
             )
-            .toList()
-          ..sort();
+            .toList();
 
-    if (mmpkAssets.isEmpty) {
+    if (matchingMapAssets.isEmpty) {
       return null;
     }
 
-    return mmpkAssets.first;
+    return matchingMapAssets.first;
   }
 
   Future<String> _materializeAssetToLocalFile(String assetPath) async {
