@@ -161,10 +161,7 @@ class _PhaseInstructionBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     switch (phase) {
       case NavigationPhase.paved:
-        return _PavedInstruction(
-          distance: pavedInstructionDistance,
-          instruction: pavedInstructionText,
-        );
+        return const SizedBox.shrink();
       case NavigationPhase.offroad:
         return _OffroadAdvisory(
           title: offroadAdvisoryTitle,
@@ -176,67 +173,6 @@ class _PhaseInstructionBanner extends StatelessWidget {
           details: walkingAdvisoryDetails,
         );
     }
-  }
-}
-
-class _PavedInstruction extends StatelessWidget {
-  const _PavedInstruction({required this.distance, required this.instruction});
-
-  final String distance;
-  final String instruction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(10, 6, 10, 0),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: const Color(0xE012151A),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF2A3038)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E3B1B),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Icon(
-              Icons.turn_right,
-              size: 28,
-              color: Color(0xFFC8CCCC),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  distance,
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    color: const Color(0xFFC8CCCC),
-                    fontFamily: 'monospace',
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                Text(
-                  instruction,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    color: const Color(0xFFC8CCCC),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 

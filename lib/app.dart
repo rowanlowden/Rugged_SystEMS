@@ -1,5 +1,6 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show Timer, unawaited;
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:arcgis_maps/arcgis_maps.dart';
 import 'package:flutter/material.dart';
@@ -66,6 +67,10 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
   NavigationPhase? _activePhase;
   OnRoadRoute? _onRoadRoute;
   LeastCostPathResult? _offroadRoute;
+  final math.Random _random = math.Random();
+  Timer? _speedSimulationTimer;
+  String? _pavedSpeedOverride;
+  String? _offroadSpeedOverride;
 
   String _status = 'Loading offline map…';
   String _coordinatesLabel = '';
@@ -272,8 +277,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       debugPrint('$message\n$stackTrace');
       _setStatus(message, busy: false);
       _showMessage(message);
-    }
-    finally {
+    } finally {
       if (mounted) {
         setState(() => _isGeneratingRoute = false);
       }
@@ -413,6 +417,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       _activePhase = phase;
       _status = _statusForPhase(phase);
     });
+    _syncSpeedSimulation();
 
     if (phase == NavigationPhase.offroad) {
       final route = _offroadRoute;
@@ -448,8 +453,61 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
       _activePhase = null;
       _status = 'Patient secured. Hospital navigation available.';
     });
+    _syncSpeedSimulation();
 
     _showMessage('Patient secured. Ready to route to hospital.');
+  }
+
+  void _syncSpeedSimulation() {
+    final phase = _activePhase;
+    final shouldSimulate =
+        !_hospitalNavigationMode &&
+        (phase == NavigationPhase.paved || phase == NavigationPhase.offroad);
+
+    if (!shouldSimulate) {
+      _speedSimulationTimer?.cancel();
+      _speedSimulationTimer = null;
+      if (_pavedSpeedOverride != null || _offroadSpeedOverride != null) {
+        setState(() {
+          _pavedSpeedOverride = null;
+          _offroadSpeedOverride = null;
+        });
+      }
+      return;
+    }
+
+    _updateSpeedForActivePhase();
+    _speedSimulationTimer ??= Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => _updateSpeedForActivePhase(),
+    );
+  }
+
+  void _updateSpeedForActivePhase() {
+    if (!mounted) {
+      return;
+    }
+
+    final phase = _activePhase;
+    if (phase == NavigationPhase.paved) {
+      final nextSpeed = (52 + _random.nextInt(9)).toString();
+      setState(() {
+        _pavedSpeedOverride = nextSpeed;
+        _offroadSpeedOverride = null;
+      });
+      return;
+    }
+
+    if (phase == NavigationPhase.offroad) {
+      final nextSpeed = '${10 + _random.nextInt(6)} MPH';
+      setState(() {
+        _offroadSpeedOverride = nextSpeed;
+        _pavedSpeedOverride = null;
+      });
+      return;
+    }
+
+    _syncSpeedSimulation();
   }
 
   void _startHospitalRoute() {
@@ -462,6 +520,7 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
 
   @override
   void dispose() {
+    _speedSimulationTimer?.cancel();
     _mapViewController.locationDisplay.stop();
     unawaited(_locationSpoofer.dispose());
     _offroadRoutePlotter.detach();
@@ -475,112 +534,117 @@ class _OfflineNavigationPageState extends State<OfflineNavigationPage> {
     return Stack(
       children: [
         Scaffold(
-      appBar: AppBar(
-        title: const Text('Rugged SystEMS'),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(148),
-          child: MapHeaderBar(
-            coordinatesLabel: _coordinatesLabel,
-            username: widget.username,
-            showCurrentDispatch: _dispatchCallAccepted,
-            onOpenCurrentDispatch: _openCurrentDispatch,
-            onLogout: _logout,
-            systemOn: _systemOn,
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: _locationEnabled ? 'Stop location' : 'Start location',
-            onPressed: _mapLoaded ? _toggleLocation : null,
-            icon: Icon(
-              _locationEnabled ? Icons.location_disabled : Icons.my_location,
-            ),
-          ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          ArcGISMapView(
-            controllerProvider: () => _mapViewController,
-            onMapViewReady: () {
-              if (!mounted) return;
-              _offroadRoutePlotter.attach();
-              _onRoadRoutePlotter.attach();
-              _locationSpoofer.attach(_mapViewController);
-              setState(() => _mapViewReady = true);
-              if (!_offlineMapLoadStarted) {
-                _offlineMapLoadStarted = true;
-                unawaited(_loadOfflineMap());
-              }
-            },
-          ),
-          if (_navigationStarted && !_hospitalNavigationMode)
-            SafeArea(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: NavigationPhaseHud(
-                  phase: _activePhase!,
-                  routeSegments: _profile.routeSegments,
-                  pavedInstructionDistance: _profile.pavedInstructionDistance,
-                  pavedInstructionText: _profile.pavedInstructionText,
-                  offroadAdvisoryTitle: _profile.offroadAdvisoryTitle,
-                  offroadAdvisoryDetails: _profile.offroadAdvisoryDetails,
-                  walkingAdvisoryTitle: _profile.walkingAdvisoryTitle,
-                  walkingAdvisoryDetails: _profile.walkingAdvisoryDetails,
-                ),
-              ),
-            ),
-          if (_hospitalNavigationMode)
-            SafeArea(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: HospitalNavigationHud(profile: _profile),
-              ),
-            ),
-          if (_serviceFault || (_busy && !_isGeneratingRoute))
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.only(top: 74),
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: _StatusCard(message: _status, showProgress: _busy),
-                ),
-              ),
-            ),
-          if (_navigationStarted && !_hospitalNavigationMode)
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: SafeArea(
-                top: false,
-                child: NavigationStatusPanel(
-                  phase: _activePhase!,
-                  profile: _profile,
-                  onPatientReached: _markPatientReached,
-                ),
-              ),
-            ),
-          if (_hospitalNavigationMode)
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: SafeArea(
-                top: false,
-                child: HospitalRoutePanel(
-                  profile: _profile,
-                  onStartHospitalRoute: _startHospitalRoute,
-                ),
-              ),
-            ),
-          if (_currentDispatchOpen)
-            Positioned.fill(
-              child: CurrentDispatchOverlay(
-                profile: _profile,
+          appBar: AppBar(
+            title: const Text('Rugged SystEMS'),
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(148),
+              child: MapHeaderBar(
                 coordinatesLabel: _coordinatesLabel,
-                onClose: _closeCurrentDispatch,
+                username: widget.username,
+                showCurrentDispatch: _dispatchCallAccepted,
+                onOpenCurrentDispatch: _openCurrentDispatch,
+                onLogout: _logout,
+                systemOn: _systemOn,
               ),
             ),
-        ],
-      ),
-      floatingActionButton: null,
+            actions: [
+              IconButton(
+                tooltip: _locationEnabled ? 'Stop location' : 'Start location',
+                onPressed: _mapLoaded ? _toggleLocation : null,
+                icon: Icon(
+                  _locationEnabled
+                      ? Icons.location_disabled
+                      : Icons.my_location,
+                ),
+              ),
+            ],
+          ),
+          body: Stack(
+            children: [
+              ArcGISMapView(
+                controllerProvider: () => _mapViewController,
+                onMapViewReady: () {
+                  if (!mounted) return;
+                  _offroadRoutePlotter.attach();
+                  _onRoadRoutePlotter.attach();
+                  _locationSpoofer.attach(_mapViewController);
+                  setState(() => _mapViewReady = true);
+                  if (!_offlineMapLoadStarted) {
+                    _offlineMapLoadStarted = true;
+                    unawaited(_loadOfflineMap());
+                  }
+                },
+              ),
+              if (_navigationStarted && !_hospitalNavigationMode)
+                SafeArea(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: NavigationPhaseHud(
+                      phase: _activePhase!,
+                      routeSegments: _profile.routeSegments,
+                      pavedInstructionDistance:
+                          _profile.pavedInstructionDistance,
+                      pavedInstructionText: _profile.pavedInstructionText,
+                      offroadAdvisoryTitle: _profile.offroadAdvisoryTitle,
+                      offroadAdvisoryDetails: _profile.offroadAdvisoryDetails,
+                      walkingAdvisoryTitle: _profile.walkingAdvisoryTitle,
+                      walkingAdvisoryDetails: _profile.walkingAdvisoryDetails,
+                    ),
+                  ),
+                ),
+              if (_hospitalNavigationMode)
+                SafeArea(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: HospitalNavigationHud(profile: _profile),
+                  ),
+                ),
+              if (_serviceFault || (_busy && !_isGeneratingRoute))
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 74),
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: _StatusCard(message: _status, showProgress: _busy),
+                    ),
+                  ),
+                ),
+              if (_navigationStarted && !_hospitalNavigationMode)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: SafeArea(
+                    top: false,
+                    child: NavigationStatusPanel(
+                      phase: _activePhase!,
+                      profile: _profile,
+                      onPatientReached: _markPatientReached,
+                      pavedSpeedOverride: _pavedSpeedOverride,
+                      offroadSpeedOverride: _offroadSpeedOverride,
+                    ),
+                  ),
+                ),
+              if (_hospitalNavigationMode)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: SafeArea(
+                    top: false,
+                    child: HospitalRoutePanel(
+                      profile: _profile,
+                      onStartHospitalRoute: _startHospitalRoute,
+                    ),
+                  ),
+                ),
+              if (_currentDispatchOpen)
+                Positioned.fill(
+                  child: CurrentDispatchOverlay(
+                    profile: _profile,
+                    coordinatesLabel: _coordinatesLabel,
+                    onClose: _closeCurrentDispatch,
+                  ),
+                ),
+            ],
+          ),
+          floatingActionButton: null,
         ),
         if (_dispatchCallShown && !_dispatchCallAccepted)
           Positioned.fill(
@@ -665,4 +729,3 @@ class _RouteLoadingScreen extends StatelessWidget {
     );
   }
 }
-
