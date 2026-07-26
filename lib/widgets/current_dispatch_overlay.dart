@@ -72,7 +72,7 @@ class CurrentDispatchOverlay extends StatelessWidget {
                           Text(
                             profile.reportedEvent,
                             style: theme.textTheme.headlineSmall?.copyWith(
-                              color: const Color(0xFFFF2222),
+                              color: const Color(0xFFE53935),
                               fontWeight: FontWeight.w800,
                             ),
                           ),

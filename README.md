@@ -81,7 +81,7 @@ Current tactical palette baseline:
 
 - Forest Green: `#1E3B1B`
 - Gold Yellow: `#D4A017`
-- Alert Red: `#FF2222`
+- Alert Red: `#E53935`
 - Light Gray: `#C8CCCC`
 
 ## Launcher Icon

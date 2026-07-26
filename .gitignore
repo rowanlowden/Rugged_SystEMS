@@ -46,3 +46,6 @@ app.*.map.json
 
 # Offline map packages (large binary assets)
 /assets/offline/*.mmpk
+
+# ArcGIS build hook generated symlink
+/arcgis_maps_core

@@ -22,12 +22,11 @@ const offroadGridWkid = 4326;
 /// OFFLINE_COST_GRID_WKID=32615
 /// ```
 Future<LeastCostPathResult> solvePresetLeastCostPath() async {
-  debugPrint('Starting least-cost-path analysis using an Esri ASCII grid...');
   const gridPath = String.fromEnvironment(
     'OFFLINE_COST_GRID_PATH',
     defaultValue: 'test_data/test.asc',
   );
-  const wkid = offroadGridWkid;
+  const wkid = 4326;
 
   if (gridPath.trim().isEmpty) {
     throw const FormatException(

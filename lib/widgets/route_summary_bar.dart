@@ -28,7 +28,7 @@ class RouteSummaryBar extends StatelessWidget {
             child: _MetricColumn(
               label: 'TOTAL RESP TIME',
               value: totalResponseTime,
-              valueColor: const Color(0xFF1E3B1B),
+              valueColor: const Color(0xFFC8CCCC),
               alignEnd: false,
               theme: theme,
             ),
